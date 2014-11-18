@@ -9,6 +9,7 @@
     ],
     "bin": [
         "install.sh",
-        "n98-magerun.phar"
+        "n98-magerun.phar",
+	"modman"
     ]
 }

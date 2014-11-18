@@ -1,0 +1,943 @@
+#!/usr/bin/env bash
+# Module Manager
+#
+#   Copyright 2009 Colin Mollenhour
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+#
+#   System Requirements:
+#    - bash
+#    - filesystem and project or web server must support symlinks
+#    - The following common utilities must be locatable in your $PATH
+#       grep (POSIX), find, ln, cp, basename, dirname, readlink
+
+version="1.9.7"
+script=${0##*/}
+usage="\
+Module Manager (v$version)
+
+Global Commands:
+  $script <command> [<options>]
+------------------------------
+  init [basedir]     initialize the pwd (or [basedir]) as the modman deploy root
+  list [--absolute]  list all valid modules that are currently checked out
+  status             show VCS 'status' command for all modules
+  incoming           show new VCS remote changesets for all VCS-based modules
+  update-all         update all modules that are currently checked out
+  deploy-all         deploy all modules (no VCS interaction)
+  repair             rebuild all modman-created symlinks (no updates performed)
+  clean              clean up broken symlinks (run this after deleting a module)
+  --help             display this help message
+  --tutorial         show a brief tutorial on using modman
+  --version          display the modman script's version
+  [--force]          overwrite existing files, ignore untrusted cert warnings
+  [--no-local]       skip processing of modman.local files
+  [--no-clean]       skip cleaning of broken symlinks
+
+Module Commands:
+  $script <command> [<module>] [<options>] [[--] <VCS options>]
+------------------------------
+  checkout <src>     checkout a new modman-compatible module using subversion
+  clone <src>        checkout a new modman-compatible module using git clone
+  hgclone <src>      checkout a new modman-compatible module using hg clone
+  link <path>        link to a module that already exists on the local filesystem
+  update             update module using the appropriate VCS
+  deploy             deploy an existing module (VCS not required or used)
+  remove             remove a module (DELETES MODULE FILES)
+  [--force]          overwrite existing files, ignore untrusted cert warnings
+  [--no-local]       skip processing of modman.local files
+  [--no-clean]       skip cleaning of broken symlinks
+  [--basedir <path>] on checkout/clone, specifies a base for module deployment
+  [--copy]           deploy by copying files instead of symlinks
+  [<VCS options>]    specify additional parameters to VCS checkout/clone
+"
+tutorial="\
+Deploying a modman module:
+------------------------------
+The 'checkout' and 'clone' commands are used to checkout new modules from a
+repository (subversion and git, respectively). These commands support additional
+arguments which will be passed to the 'svn checkout' and 'git clone' commands.
+This allows you to for example specify a --username (svn) or a --branch (git).
+See 'svn help checkout' and 'git help clone' for a full list of options.
+Both svn:externals and git submodules will be automatically included.
+
+To link to modules that already exist on the local file system you can use
+the 'link' command. The 'update' command will be supported the same as if the
+module had been created using the checkout or clone command. For example:
+
+    $ modman link ~/projects/My_Module
+    $ modman update My_Module
+
+By default, if a module being checked out contains symlink mappings that
+conflict with existing files, an error will be thrown. Use --force to cause
+any existing files or directories that conflict to be removed. Be careful!
+
+Writing modman modules:
+------------------------------
+Each module should contain a file named \"modman\" which defines which files
+go where relative to the directory where modman was initialized.
+
+==== Start example modman file ====
+   # Comments are supported, begin a line with a hash
+   code                   app/code/local/My/Module/
+   design                 app/design/frontend/default/default/mymodule/
+
+   # Source and destination can have different names.
+   en_US.csv              app/locale/en_US/My_Module.csv
+
+   # Destination file name is not required if the same as the source.
+   My_Module.xml          app/etc/modules/
+
+   # Leave out the destination entirely to assume the same path as the source.
+   lib/Somelib
+
+   # Bash extended glob patterns supported.
+   skin/css/*             skin/frontend/base/default/css/
+   skin/js/*              skin/frontend/base/default/js/
+
+   # Import another modman module
+   @import                modules/Fooman_Speedster
+
+   # Execute a command on the shell
+   @shell                 rm -rf \$PROJECT/var/cache/*
+==== End example modman file ====
+
+Globbing:
+------------------------------
+Bash globbing in the modman file is supported. The result is that each file or
+directory that matches the globbing pattern will get its own symlink in the
+specified location when the module is deployed.
+
+Importing modules:
+------------------------------
+One modman file can import another modman module using @import and the path to
+the imported module's root relative to the current module's root. Imported
+modules deploy to the same path as checked out modules so @import can be used
+to include common modules that are just stored in a subdirectory, or are
+included via svn:externals or git submodules. Example:
+    > svn propget svn:externals .
+    ^/modules/Fooman_Speedster  modules/Fooman_Speedster
+In this example, modules/Fooman_Speedster would contain it's own modman file
+and could therefore be imported by any other module or checked out by itself.
+
+Shell commands:
+------------------------------
+Actions to be taken any time one of the checkout, clone, update, deploy,
+update-all or repair commands are used can be defined with the @shell
+directive. The rest of the line after @shell will be piped to a new bash
+shell with the working directory being the module's root. The following
+environment variables will be made available:
+  PROJECT    The path of the project base dir (where modman was initialized)
+  MODULE     The current module's path
+
+Standalone mode:
+------------------------------
+The modman script can be used without a VCS by placing the module directory in
+the proper location and running \"modman deploy <module>\". The root of the
+module must be located at <project_root>/.modman/<module_name>/ and it must
+contain a modman file.
+
+Shortcut:
+------------------------------
+Modman can be run without the module name if the current directory's realpath
+is within a module's path. E.g. \"modman update\" or \"modman deploy\".
+
+Local 'modman' file:
+------------------------------
+You can create a modman file named \"modman.local\" which will also get applied
+like the standard modman file. The intended purpose of this file is to allow you
+to specify additional directives while excluding them from version control. The
+\"--no-local\" command option will prevent these files from being processed.
+
+Custom 'clean' script:
+------------------------------
+On some systems the dead link search can be brutally slow. You can create a
+custom clean script at .modman/.clean which will override the default clean
+script. Here is an example of a custom clean script that ignores the \"media\"
+and \"var\" directories:
+
+    echo Cleaning dead links in \$PWD
+    find -L . -mount \\( -path ./media -o -path ./var \\) -prune -o -type l -exec rm {} \;
+
+Author:
+------------------------------
+Colin Mollenhour
+http://colin.mollenhour.com/
+colin@mollenhour.com
+"
+
+# Action is first argument
+action=$1; shift
+
+# Fix GNU inconsistencies with Mac
+case $OSTYPE in
+  darwin*|*bsd*)
+    stat_type="bsd_stat"
+    readlink_missing="echo" # readlink -m not supported
+    ;;
+  *)
+    stat_type="stat -c %F"
+    readlink_missing="readlink -m"
+    ;;
+esac
+bsd_stat ()
+{
+  case "$(stat -f %T "$1")" in
+    "*") echo file;;
+    "@") echo symlink;;
+    "/") echo directory;;
+    *) echo unknown_type;;
+  esac
+}
+pager=${PAGER:-$(which pager &> /dev/null)}
+if [ -n "$pager" ]; then
+  pager=less
+fi
+
+###########################
+# Handle "init" command, simply create .modman directory
+if [ "$action" = "init" ]; then
+  basedir=$1
+  [[ -n "$basedir" && ! -d "$basedir" ]] && { echo "$basedir is not a directory."; exit 1; }
+  mkdir .modman || { echo "Could not create .modman directory" && exit 1; }
+  if [ -n "$basedir" ]; then
+    echo "$basedir" > .modman/.basedir
+    basedir="with basedir at $basedir"
+  fi
+  echo "Initialized Module Manager at $(pwd) $basedir"
+  exit 0
+###########################
+# Handle "--help" command
+elif [ "$action" = "--help" -o "$action" = "" ]; then
+  echo -e "$usage"; exit 0
+###########################
+# Handle "--tutorial" command
+elif [ "$action" = "--tutorial" ]; then
+  echo -e "$tutorial" | $pager; exit 0
+###########################
+# Handle "--version" command
+elif [ "$action" = "--version" ]; then
+  echo "Module Manager version: $version"; exit 0
+fi
+
+
+#############################################################
+# Echo in bold font if stdout is a terminal
+ISTTY=0; if [ -t 1 ]; then ISTTY=1; fi
+bold () { if [ $ISTTY -eq 1 ]; then tput bold; fi; }
+unbold () { if [ $ISTTY -eq 1 ]; then tput sgr0; fi; }
+echo_b ()
+{
+  if [ "$1" = "-e" ]; then
+    echo -e "$(bold)$2$(unbold)"
+  else
+    echo "$(bold)$1$(unbold)"
+  fi
+}
+
+
+#############################################################
+# Check for existence of a module directory and modman file
+require_wc ()
+{
+  if ! [ -d "$mm/$1" ]; then
+    echo_b "ERROR: $1 has not been checked out."; return 1
+  fi
+  if ! [ -r "$mm/$1/modman" ]; then
+    echo_b "ERROR: $1 does not contain a \"modman\" module description file."; return 1
+  fi
+  return 0
+}
+
+###############################################################
+# Removes dead symlinks
+remove_dead_links ()
+{
+  if [ $NOCLEAN -eq 1 ]; then
+    return 0
+  fi
+
+  # Support use of a custom clean script
+  if [ -r "$mm/.clean" ]; then
+    ( cd "$root"; $SHELL "$mm/.clean" )
+  else
+    # Use -exec rm instead of -delete to avoid bug in Darwin. -Thanks Vinai!
+    ( cd "$root"; find -L . -mount -type l -exec rm {} \; )
+  fi
+  return $?
+}
+
+###############################################################
+# Removes all .basedir files from submodules
+remove_basedirs ()
+{
+  local module=$1
+  find "$mm/$module" -name .basedir | grep -FZv "$mm/$module/.basedir" | xargs -0 rm -f
+}
+
+###############################################################
+# Reads the base directory for a module
+# Return value is blank, or relative path ending with /
+get_basedir ()
+{
+  local module_dir=$1
+  local basedir=''
+  if [ -r "$module_dir/.basedir" ]; then
+    basedir=$(cat "$module_dir/.basedir" | grep -v '^#')
+    if [ -n "$basedir" ]; then
+      basedir=${basedir%%/}/
+    fi
+  fi
+  echo -n "$basedir"
+}
+
+###############################################################
+# Writes a file, setting the base directory for a module
+set_basedir ()
+{
+  local module_dir=$1
+  local basedir=${2##/}
+  basedir=${basedir%%/}
+  if [ -n "$basedir" ]; then
+    echo -e "# This file was created by modman. Module base directory:\n$basedir" \
+      > "$module_dir/.basedir"
+    if ! [ $? ]; then
+      echo "ERROR: Could not write to file: $module_dir/.basedir."
+      return 1
+    fi
+  fi
+  return 0
+}
+
+################################################################################
+# Reads a modman file and does the following:
+#   Creates the symlinks as described
+#   Imports external modman files (@import)
+#   Runs shell commands (@shell)
+apply_modman_file ()
+{
+  local module=$1
+  local module_dir=$(dirname "$module")
+  local basedir=$(get_basedir "$module_dir")
+  local relpath=${module:$((${#mmroot}+1))}
+
+  # Use argument if module doesn't have a .basedir file
+  if [ -z "$basedir" ]; then
+    basedir=$2
+  fi
+
+  # while loop should not read from stdin or else @shell scripts cannot get stdin
+  IFS=$'\r\n'
+  for line in $(grep -v -e '^#' -e '^\s*$' "$module"); do
+    IFS=$' \t\n'
+
+    # Split <target> <real>
+    read target real <<< $line
+
+    # Assume target == real if only one path is given
+    if [ -z "$real" ]; then
+        real="$target"
+    fi
+
+    # Sanity check for empty data
+    if [ -z "$target" -o -z "$real" ]; then
+      echo_b -e "ERROR: Invalid input in modman file ($relpath):\n $line"
+      return 1
+    fi
+
+    # Import other module definitions (e.g. git submodules, svn:externals, etc..)
+    if [ "$target" = "@import" ]; then
+      # check if base defined, create and save base to .basedir file
+      read import_path import_base <<< $real
+
+      import=$module_dir/${import_path%/}/modman
+      if ! [ -r "$import" ]; then
+        relimport=${import:$((${#mmroot}+1))}
+        echo_b -e "ERROR: modman file not found ($relimport):\n $line"
+        return 1
+      fi
+
+      if [ -z "$import_base" ]; then
+        import_base=${basedir%%/}
+      else
+        import_base=${import_base##/}
+        import_base=${basedir}${import_base%%/}
+        if ! [ -d "$root/$import_base" ]; then
+          if ! mkdir -p "$root/$import_base"; then
+            echo "ERROR: Could not create import base directory: $import_base"
+            return 1
+          fi
+          echo "Created import base directory: $import_base"
+        fi
+        if ! set_basedir "$module_dir/$import_path" "$import_base"; then
+          return 1
+        fi
+      fi
+
+      apply_modman_file "$import" "$import_base/" || return 1
+      continue
+    fi
+
+    # Run commands on the shell!
+    # temporary file is workaround so that script can receive stdin
+    if [ "$target" = "@shell" ]; then
+      cd "$module_dir"
+      export PROJECT=$root/${basedir%%/}
+      export MODULE=$module_dir
+      shell_tmp=$(mktemp "$mm/.tmp.XXXXXXX")
+      echo "($real)" > "$shell_tmp"
+      source "$shell_tmp"
+      rm -f "$shell_tmp"
+      continue
+    fi
+
+    # Create symlink to target
+    local src=$module_dir/$target
+    local dest=$root/${basedir}${real%/}
+
+    # Handle globbing (extended globbing enabled)
+    shopt -s extglob
+    if ! [ -e "$src" ] && [ $(ls $src 2> /dev/null | wc -l) -gt 0 ]; then
+      for _src in $src; do
+        apply_path "$_src" "$dest/${_src##*/}" "$target" "${real%/}/${_src##*/}" "$line" || return 1
+      done
+      continue
+    fi # end Handle globbing
+
+    # Handle aliases that do not exist
+    if ! [ -e "$src" ];
+    then
+      echo -e "$(bold)WARNING:$(unbold) Target does not exist ($relpath):\n $line"
+      continue
+    fi
+
+    # Allow destination to be a dir when src is a file
+    if [ -f "$src" ] && [ -d "$dest" -o "/" = ${real: -1} ]; then
+      dest="$dest/$(basename "$src")"
+    fi
+
+    apply_path "$src" "$dest" "$target" "$real" "$line" || return 1
+  done
+
+  return 0
+}
+
+###########################################################################
+# Creates a symlink or copies a file (with lots of error-checking)
+apply_path ()
+{
+  local src="$1"; local dest="$2"; local target="$3"; local real="$4"; local line="$5"
+
+  # Make symlinks relative to mmroot only if the base path is not itself in a symlinked path
+  if [ $COPY -eq 0 ] && [ "${dest%/*}" == "$($readlink_missing "${dest%/*}")" ]; then
+    local reldest=${dest#$mmroot/}; reldest=${reldest#/}
+    if [ "$reldest" != "${reldest%/*}" ]; then
+      reldest=$(IFS=/; for d in ${reldest%/*}; do echo -n '../'; done)
+    else
+      reldest=""
+    fi
+    src=${reldest}${src#$mmroot/}
+  fi
+
+  # Handle cases where files already exist at the destination or link does not match expected destination
+  if [ -e "$dest" ];
+  then
+    if ! [ -L "$dest" ] && [ $FORCE -eq 0 ]; then
+      echo_b "CONFLICT: $($stat_type "$dest") already exists and is not a symlink:"
+      echo_b " $line"
+      echo   "(Run with $(bold)--force$(unbold) to force removal of existing files and directories.)"
+      return 1
+    elif ! [ -L "$dest" ] || [ "$src" != "$(readlink "$dest")" ]; then
+      echo "$(bold)WARNING:$(unbold) Removing conflicting $($stat_type "$dest"): $dest"
+      rm -rf "$dest" || return 1
+    fi
+  fi
+
+  # Create links if they do not already exist
+  if ! [ -e "$dest" ];
+  then
+    # Delete conflicting symlinks that are broken
+    if [ -L "$dest" ]; then
+      rm -f "$dest"
+    fi
+    # Create parent directories
+    if ! mkdir -p "${dest%/*}"; then
+      echo_b -e "ERROR: Unable to create parent directory (${dest%/*}):\n $line"
+      return 1
+    fi
+    # Symlink or copy
+    success=0
+    if [ $COPY -eq 1 ]; then
+      verb='copy'
+      cp -R "$src" "$dest" && success=1
+    else
+      verb='create symlink'
+      ln -s "$src" "$dest" && success=1
+    fi
+    if [ $success -eq 1 ]; then
+      printf " Applied: %-30s  %s\n" "$target" "$real"
+    else
+      echo_b -e "ERROR: Unable to $verb ($dest):\n $line"
+      return 1
+    fi
+  fi
+  return 0
+}
+
+###########################################################################
+# Get git remote tracking branch or an empty string
+get_tracking_branch ()
+{
+  local tracking_branch=$(git rev-parse --symbolic-full-name --abbrev-ref @{u} 2> /dev/null)
+  if [ -n $tracking_branch -a "$tracking_branch" != "@{u}" ]; then
+    echo $tracking_branch
+  fi
+}
+
+################################
+# Find the .modman directory and store parent path in $root
+mm_not_found="Module Manager directory not found.\nRun \"$script init\" in the root of the project with which you would like to use Module Manager."
+_pwd=$(pwd -P)
+root=$_pwd
+while ! [ -d "$root/.modman" ]; do
+  if [ "$root" = "/" ]; then echo -e $mm_not_found && exit 1; fi
+  cd .. || { echo -e "ERROR: Could not traverse up from $root\n$mm_not_found" && exit 1; }
+  root=$(pwd)
+done
+
+mmroot=$root          # parent of .modman directory
+mm=$root/.modman      # path to .modman
+
+# Allow a different root to be specified as root for deploying modules, applies to all modules
+newroot=$(get_basedir "$mm")
+if [ -n "$newroot" ]; then
+  cd "$mmroot/$newroot" || {
+    echo -e "ERROR: Could not change to basedir specified in .basedir file: $newroot"
+    exit 1
+  }
+  root=$(pwd)
+fi
+
+# Check for common option overrides
+FORCE=0               # --force option off by default
+LOCAL=1               # --no-local option off by default
+COPY=0                # --copy option off by default
+NOCLEAN=0             # --no-clean off by default
+basedir=''
+while true; do
+  case "$1" in
+    --force)    FORCE=1; shift ;;
+    --no-local) LOCAL=0; shift ;;
+    --copy)     COPY=1; shift ;;
+    --no-clean) NOCLEAN=1; shift ;;
+    --basedir)
+      shift; basedir="$1"; shift
+      if ! [ -n "$basedir" -a -d "$root/$basedir" ]; then
+        echo "Specified --basedir does not exist: $basedir"; exit 1
+      fi
+      ;;
+    *) break ;;
+  esac
+done
+
+###############################
+# Handle "list" command
+if [ "$action" = "list" ]; then
+  prefix=''
+  if [ "$1" = "--absolute" ]; then shift; prefix="$mm/"; fi
+  if [ -n "$1" ]; then echo "Too many arguments to list command."; exit 1; fi
+  for module in $(ls -1 "$mm"); do
+    if [ -d "$mm/$module" -a -e "$mm/$module/modman" ]; then
+      echo "${prefix}$module"
+    fi
+  done
+  exit 0
+
+###############################
+# Handle "status" command
+elif [ "$action" = "status" ]; then
+  if [ -n "$1" ]; then echo "Too many arguments to status command."; exit 1; fi
+  for module in $(ls -1 "$mm"); do
+    if [ -d "$mm/$module" -a -e "$mm/$module/modman" ]; then
+      cd "$mm/$module"
+      echo_b "-- $module --"
+      if [ -d "$mm/$module/.git" ]; then
+        git status
+      elif [ -d "$mm/$module/.svn" ]; then
+        svn status
+      elif [ -d "$mm/$module/.hg" ]; then
+        hg status
+      else
+        echo "Not a git, hg or svn repository."
+      fi
+      echo
+    fi
+  done
+  exit 0
+
+###############################
+# Handle "incoming" command
+elif [ "$action" = "incoming" ]; then
+  if [ -n "$1" ]; then echo "Too many arguments to incoming command."; exit 1; fi
+  tmpfile=$(mktemp "$mm/.incoming.XXXX")
+  for module in $(ls -1 "$mm"); do
+    if [ -d "$mm/$module" -a -e "$mm/$module/modman" ]; then
+      cd "$mm/$module"
+      echo_b "-- $module --" >> $tmpfile
+      if [ -d "$mm/$module/.git" ]; then
+        tracking_branch=$(get_tracking_branch)
+        if [ -z $tracking_branch ]; then
+          echo "Could not resolve remote tracking branch for $module module." >> $tmpfile
+        else
+          echo "Fetching updates for $module..."
+          git fetch && git --no-pager log --color ..origin/master >> $tmpfile
+        fi
+      elif [ -d "$mm/$module/.svn" ]; then
+        svn st --show-updates >> $tmpfile
+      elif [ -d "$mm/$module/.hg" ]; then
+        hg incoming >> $tmpfile
+      else
+        echo "Not a git, hg or svn repository." >> $tmpfile
+      fi
+      echo >> $tmpfile
+    fi
+  done
+  less -fFR $tmpfile
+  rm $tmpfile
+  exit 0
+
+###############################
+# Handle "deploy-all" command
+elif [ "$action" = "deploy-all" ]; then
+  if [ -n "$1" ]; then echo "Too many arguments to deploy-all command."; exit 1; fi
+  remove_dead_links
+  errors=0
+  for module in $(ls -1 "$mm"); do
+    test -d "$mm/$module" && require_wc "$module" || continue;
+    echo "Deploying $module to $root"
+    if apply_modman_file "$mm/$module/modman"; then
+      echo -e "Deployment of '$module' complete.\n"
+      if [ $LOCAL -gt 0 -a -r "$mm/$module/modman.local" ]; then
+        apply_modman_file "$mm/$module/modman.local" && echo "Applied local modman file for $module"
+      fi
+    else
+      echo_b -e "Error occurred while deploying '$module'.\n"
+      errors=$((errors+1))
+    fi
+  done
+  echo "Deployed all modules with $errors errors."
+  exit 0
+
+###############################
+# Handle "update-all" command
+#   Updates source code, removes dead links and then deploys modules
+elif [ "$action" = "update-all" ]; then
+  if [ -n "$1" ]; then echo "Too many arguments to update-all command."; exit 1; fi
+  update_errors=0
+  updated=''
+
+  # Fetch first in case an origin is not responding or slow
+  for module in $(ls -1 "$mm"); do
+    test -d "$mm/$module" && require_wc "$module" || continue;
+    cd "$mm/$module"
+    success=1
+    if [ -d .git ] && [ "$(git remote)" != "" ]; then
+      echo "Fetching changes for $module"
+      success=0
+      if [ $FORCE -eq 1 ]; then
+        if git status -s | grep -vq '??'; then
+          echo "Cannot do --force update, module has uncommitted changes."
+          exit 1
+        else
+          git fetch --force && success=1
+        fi
+      else
+        git fetch && success=1
+      fi
+    fi
+    if [ $success -eq 1 ]; then
+      updated="${updated}${module}\n"
+    else
+      echo_b -e "Failed to fetch updates for $module\n"
+      update_errors=$((update_errors+1))
+    fi
+  done
+
+  # Then update using merge
+  for module in $(echo -en "$updated"); do
+    test -d "$mm/$module" && require_wc "$module" || continue;
+    cd "$mm/$module"
+    success=0
+    if [ -d .svn ]; then
+      echo "Updating $module"
+      if [ $FORCE -eq 1 ]; then
+        svn update --force --non-interactive --trust-server-cert && success=1
+      else
+        svn update && success=1
+      fi
+    elif [ -d .git ] && [ "$(git remote)" != "" ]; then
+      tracking_branch=$(get_tracking_branch)
+      echo "Updating $module"
+      if [ -z $tracking_branch ]; then
+        echo "Could not resolve remote tracking branch, code will not be updated."
+      elif [ $FORCE -eq 1 ]; then
+        git reset --hard $tracking_branch && git submodule update --init --recursive && success=1
+      else
+        git merge $tracking_branch && git submodule update --init --recursive && success=1
+      fi
+    elif [ -d .hg ]; then
+      echo "Updating $module"
+      hg pull && hg update && success=1
+    else
+      success=1
+    fi
+    echo
+    if [ $success -ne 1 ]; then
+      echo_b -e "Error occurred while updating $module\n"
+      update_errors=$((update_errors+1))
+    fi
+  done
+  remove_dead_links
+  deploy_errors=0
+  for module in $(ls -1 "$mm"); do
+    test -d "$mm/$module" && require_wc "$module" || continue;
+    if apply_modman_file "$mm/$module/modman"; then
+      echo -e "Deployment of '$module' complete.\n"
+      if [ $LOCAL -gt 0 -a -r "$mm/$module/modman.local" ]; then
+        apply_modman_file "$mm/$module/modman.local" && echo "Applied local modman file for $module"
+      fi
+    else
+      echo_b -e "Error occurred while deploying '$module'.\n"
+      deploy_errors=$((deploy_errors+1))
+    fi
+  done
+  echo "Updated all modules with $update_errors update errors and $deploy_errors deploy errors."
+  exit 0
+
+###########################
+# Handle "repair" command
+elif [ "$action" = "repair" ]; then
+  echo "Repairing links, do not interrupt."
+  mv "$mm" "$mm-repairing" || { echo_b "ERROR: Could not temporarily rename .modman directory."; exit 1; }
+  remove_dead_links
+  mv "$mm-repairing" "$mm" || { echo_b "ERROR: Could not restore .modman directory."; exit 1; }
+  for module in $(ls -1 "$mm"); do
+    test -d "$mm/$module" && require_wc "$module" || continue;
+    remove_basedirs "$module" &&
+    apply_modman_file "$mm/$module/modman" &&
+    echo -e "Repaired $module.\n"
+    if [ $LOCAL -gt 0 -a -r "$mm/$module/modman.local" ]; then
+      apply_modman_file "$mm/$module/modman.local" && echo "Applied local modman file for $module"
+    fi
+  done
+  exit 0
+
+###########################
+# Handle "clean" command
+elif [ "$action" = "clean" ]; then
+  echo "Cleaning broken links."
+  NOCLEAN=0
+  remove_dead_links
+  exit 0
+fi
+
+#############################################
+# Handle all other module-specific commands
+#############################################
+
+REGEX_ACTION='^(update|deploy|checkout|clone|hgclone|link|remove)$'
+REGEX_NEW_MODULE='^(checkout|clone|hgclone|link)$'
+REGEX_BAD_MODULE="($REGEX_ACTION| )"
+REGEX_MODULE='^[a-zA-Z0-9_-]+$'
+
+if ! [[ "$action" =~ $REGEX_ACTION ]]; then
+  echo "Invalid action specified: $action"
+  exit 1
+fi
+
+module=''
+src=''
+
+# If valid module is specified on command line
+if [ -z "$module" -a -n "$1" -a -d "$mm/$1" ] || [[ "$1" =~ $REGEX_MODULE ]]; then
+  module=$1; shift
+fi
+
+# If module name is not given
+if [ -z "$module" ]; then
+  # Extract from end of next argument assuming it is the repo location
+  if [[ "$action" =~ $REGEX_NEW_MODULE ]]; then
+    if [ $# -eq 1 -o "${2:0:1}" = "-" ]; then
+      module=${1%.git}             # strip .git if specified
+      module=${module//:/\/}       # replace : with / for basename in case of git SSH
+      module=$(basename "$module") # get the end-most part of the repo url
+    fi
+
+  # Discover if modman is run from within a module directory
+  else
+    cd "$_pwd"
+    while [ $(dirname "$mm") != "$(pwd)" ] && [ "$(pwd)" != "/" ]; do
+      modpath=$(pwd)
+      if [ $(dirname "$modpath") = "$mm" ]; then
+        module=$(basename "$modpath")
+        break
+      fi
+      cd ..
+    done
+  fi
+fi
+
+# Module must be next argument
+if [ -z "$module" -a -n "$1" ]; then
+  module=$1; shift
+fi
+if [ -z "$module" ]; then
+  echo "Not enough arguments (no module specified)"
+  exit 1
+fi
+
+# Get optional args again (allow them to come after the module name)
+while true; do
+  case "$1" in
+    --force)    FORCE=1; shift ;;
+    --no-local) LOCAL=0; shift ;;
+    --no-clean) NOCLEAN=1; shift ;;
+    --copy)     COPY=1; shift ;;
+    --basedir)
+      shift; basedir="$1"; shift
+      if ! [ -n "$basedir" -a -d "$root/$basedir" ]; then
+        echo "Specified --basedir does not exist: $basedir"; exit 1
+      fi
+      ;;
+    *)
+      break
+  esac
+done
+
+cd "$_pwd";               # restore old root
+wc_dir=$mm/$module        # working copy directory for module
+wc_desc=$wc_dir/modman    # path to modman structure descriptor file
+
+case "$action" in
+
+  update)
+    require_wc "$module" || exit 1
+    cd "$wc_dir"
+    success=0
+    if [ -d .svn ]; then
+      if [ $FORCE -eq 1 ]; then
+        svn update --force --non-interactive --trust-server-cert && success=1
+      else
+        svn update && success=1
+      fi
+    elif [ -d .git ]; then
+      if [ $FORCE -eq 1 ]; then
+        tracking_branch=$(git rev-parse --symbolic-full-name --abbrev-ref @{u})
+        [[ -n $tracking_branch ]] || { echo "Could not resolve remote tracking branch."; exit 1; }
+        git fetch --force && git reset --hard $tracking_branch && git submodule update --init --recursive && success=1
+      else
+        git pull && git submodule update --init --recursive && success=1
+      fi
+    elif [ -d .hg ]; then
+        hg pull && hg update && success=1
+    fi
+    [ $success -eq 1 ] || { echo_b "Failed to update working copy of '$module'."; exit 1; }
+
+    remove_dead_links
+    apply_modman_file "$wc_desc" && echo "Update of $module complete."
+    if [ $LOCAL -gt 0 -a -r "$wc_desc.local" ]; then
+      apply_modman_file "$wc_desc.local" && echo "Applied local modman file for $module"
+    fi
+    ;;
+
+  checkout|clone|hgclone|link)
+    FORCE=1
+    cd "$mm"
+    if [[ "$module" =~ $REGEX_BAD_MODULE ]]; then
+      echo "You cannot $action a module with a name matching $REGEX_BAD_MODULE."; exit 1
+    fi
+    if [ -d "$wc_dir" ]; then
+      echo "A module named '$module' has already been checked out."; exit 1
+    fi
+
+    if [ -z "$src" ]; then
+      src="$1"; shift
+    fi
+    if [ -z "$src" -o "$src" = "--" ]; then
+      echo "You must specify a source for the '$action' command."; exit 1
+    fi
+    if [ "$1" = "--" ]; then shift; fi
+
+    success=0
+    verb=''
+    if [ "$action" = "checkout" ]; then
+      verb='checked out'
+      svn checkout "$src" $@ "$module" && success=1
+    elif [ "$action" = "clone" ]; then
+      verb='cloned'
+      git clone --recursive "$src" $@ "$module" && success=1
+    elif [ "$action" = "hgclone" ]; then
+      verb='cloned'
+      hg clone "$src" $@ "$module" && success=1
+    elif [ "$action" = "link" ]; then
+      verb='linked'
+      cd "$mmroot"
+      if ! [ -d "$src" ]; then
+        echo "The path specified does not exist or is not a directory."
+        echo "The module path must either be an absolute path, or relative to $mmroot"
+        exit 1
+      fi
+      if [ "${src:0:1}" != "/" ]; then
+        src="../$src"
+      fi
+      ln -s "$src" ".modman/$module" && success=1
+      cd "$mm"
+    fi
+
+    if
+      [ $success -eq 1 ] &&
+      require_wc "$module" && cd "$wc_dir" &&
+      set_basedir "$wc_dir" "$basedir" &&
+      apply_modman_file "$wc_desc"
+    then
+      if [ -n "$basedir" ]; then
+        using_basedir=" using base directory '$basedir'"
+      fi
+      echo "Successfully $verb new module '$module'$using_basedir"
+    else
+      if [ -d "$wc_dir" ]; then rm -rf "$wc_dir"; fi
+      echo "Error trying to $action new module '$module', operation cancelled."
+      exit 1
+    fi
+    ;;
+
+  deploy)
+    require_wc "$module" || exit 1
+    apply_modman_file "$wc_desc" && echo "$module has been deployed under $root"
+    if [ $LOCAL -gt 0 -a -r "$wc_desc.local" ]; then
+      apply_modman_file "$wc_desc.local" && echo "Applied local modman file for $module"
+    fi
+    ;;
+
+  remove)
+    require_wc "$module" || exit 1
+    rm -rf "$wc_dir" && remove_dead_links && echo "$module has been removed"
+    ;;
+
+  *)
+    echo -e "$usage"
+    echo_b "Invalid action: $action"
+    exit 1
+
+esac
+
