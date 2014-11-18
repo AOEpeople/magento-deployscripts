@@ -29,3 +29,8 @@ TODO: add more information here
 ### opsworks_*.sh
 
 ### *lint.sh
+
+### Tools
+
+#### n98-magerun
+#### modman
