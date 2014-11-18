@@ -9,8 +9,6 @@
     ],
     "bin": [
         "install.sh",
-        "n98-magerun.phar",
-        "systemstorage_backup.sh",
-        "systemstorage_import.sh"
+        "n98-magerun.phar"
     ]
 }
