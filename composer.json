@@ -1,0 +1,16 @@
+{
+    "name":"AOEPeople/magento-deployscripts",
+    "description":"Collection of scripts for Magento builds and deployments",
+    "minimum-stability":"dev",
+    "authors":[
+        {
+            "name":"Fabrizio Branca"
+        }
+    ],
+    "bin": [
+        "install.sh",
+        "n98-magerun.phar",
+        "systemstorage_backup.sh",
+        "systemstorage_import.sh"
+    ]
+}
