@@ -39,6 +39,7 @@ tools/composer.phar install --verbose --no-ansi --no-interaction || { echo "Comp
 if [ ! -f 'htdocs/index.php' ] ; then echo "Could not find htdocs/index.php"; exit 1 ; fi
 if [ ! -f 'tools/modman' ] ; then echo "Could not find modman script"; exit 1 ; fi
 if [ ! -d '.modman' ] ; then echo "Could not find .modman directory"; exit 1 ; fi
+if [ ! -f '.modman/.basedir' ] ; then echo "Could not find .modman/.basedir"; exit 1 ; fi
 
 # Run modman
 # This should be run during installation
