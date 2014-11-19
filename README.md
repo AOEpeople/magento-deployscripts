@@ -12,6 +12,29 @@ git clone -b v1.0.0 https://github.com/AOEpeople/magento-deployscripts.git
 ```
 Since these scripts might change significantly and your deployment process might fail otherwise.
 
+### Usage
+
+Add the magento-deployment scripts to your project using Composer:
+
+```
+{
+    "name": "my/project",
+    "minimum-stability": "dev",
+    "require": {
+        "aoepeople/magento-deployscripts": "1.0.1"
+    },
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/AOEpeople/magento-deployscripts.git"
+        }
+    ],
+    "config" : {
+        "bin-dir": "tools"
+    }
+}
+```
+
 ### Introduction
 
 #### build vs. provisioning vs. deployment vs. installation
