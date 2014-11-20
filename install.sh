@@ -18,7 +18,7 @@ while getopts 'e:r:s' OPTION ; do
 case "${OPTION}" in
         e) ENVIRONMENT="${OPTARG}";;
         r) RELEASEFOLDER=`echo "${OPTARG}" | sed -e "s/\/*$//" `;; # delete last slash
-        s) SKIPIMPORTFROMSYSTEMSTORAGE=1;;
+        s) SKIPIMPORTFROMSYSTEMSTORAGE=true;;
         \?) echo; usage 1;;
     esac
 done
@@ -72,7 +72,7 @@ tools/modman deploy-all --force || { echo "Error while running modman" ; exit 1;
 echo
 echo "Systemstorage"
 echo "-------------"
-if [ ! -z "${SKIPIMPORTFROMSYSTEMSTORAGE}" ] ; then
+if ${SKIPIMPORTFROMSYSTEMSTORAGE} ; then
     echo "Skipping import system storage backup because parameter was set"
 else
 
@@ -117,22 +117,25 @@ echo
 
 echo
 echo "Triggering Magento setup scripts vi n98-magerun"
+echo "-----------------------------------------------"
 cd -P "${RELEASEFOLDER}/htdocs/" || { echo "Error while switching to htdocs directory" ; exit 1; }
 ../tools/n98-magerun.phar sys:setup:run || { echo "Error while triggering the update scripts using n98-magerun" ; exit 1; }
 
 
 
+# Cache should be handled by customizing the id_prefix!
+#echo
+#echo "Cache"
+#echo "-----"
+#
+#if [ "${ENVIRONMENT}" == "devbox" ] || [ "${ENVIRONMENT}" == "latest" ] || [ "${ENVIRONMENT}" == "deploy" ] ; then
+#    cd -P "${RELEASEFOLDER}/htdocs/" || { echo "Error while switching to htdocs directory" ; exit 1; }
+#    ../tools/n98-magerun.phar cache:flush || { echo "Error while flushing cache using n98-magerun" ; exit 1; }
+#    ../tools/n98-magerun.phar cache:enable || { echo "Error while enabling cache using n98-magerun" ; exit 1; }
+#fi
 
-echo
-echo "Cache"
-echo "-----"
-
-if [ "${ENVIRONMENT}" == "devbox" ] || [ "${ENVIRONMENT}" == "latest" ] || [ "${ENVIRONMENT}" == "deploy" ] ; then
-    cd -P "${RELEASEFOLDER}/htdocs/" || { echo "Error while switching to htdocs directory" ; exit 1; }
-    ../tools/n98-magerun.phar cache:flush || { echo "Error while flushing cache using n98-magerun" ; exit 1; }
-    ../tools/n98-magerun.phar cache:enable || { echo "Error while enabling cache using n98-magerun" ; exit 1; }
-fi
 
 echo
 echo "Deleting maintenance.flag"
+echo "-------------------------"
 rm "${RELEASEFOLDER}/htdocs/maintenance.flag" || { echo "Error while deleting the maintenance.flag" ; exit 1; }
