@@ -56,6 +56,7 @@ Checkout http://www.slideshare.net/aoepeople/rock-solid-magento/55 (and the next
 
 ```
 .git*
+./htdocs/install.php
 ./htdocs/includes
 ./htdocs/downloader
 ./htdocs/pkginfo
@@ -65,6 +66,7 @@ Checkout http://www.slideshare.net/aoepeople/rock-solid-magento/55 (and the next
 ./htdocs/*.sample
 ./htdocs/var
 ./htdocs/media
+./tools/composer.phar
 ./.modman/Aoe_TemplateHints
 ./.modman/EcomDev_PHPUnit
 ```
