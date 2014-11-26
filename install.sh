@@ -72,7 +72,7 @@ tools/modman deploy-all --force || { echo "Error while running modman" ; exit 1;
 echo
 echo "Systemstorage"
 echo "-------------"
-if ${SKIPIMPORTFROMSYSTEMSTORAGE} ; then
+if [[ -n ${SKIPIMPORTFROMSYSTEMSTORAGE} ]]  && ${SKIPIMPORTFROMSYSTEMSTORAGE} ; then
     echo "Skipping import system storage backup because parameter was set"
 else
 
