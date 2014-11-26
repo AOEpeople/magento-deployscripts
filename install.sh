@@ -135,7 +135,13 @@ cd -P "${RELEASEFOLDER}/htdocs/" || { echo "Error while switching to htdocs dire
 #fi
 
 
+if [ -f "${RELEASEFOLDER}/htdocs/maintenance.flag" ] ; then
+    echo
+    echo "Deleting maintenance.flag"
+    echo "-------------------------"
+    rm "${RELEASEFOLDER}/htdocs/maintenance.flag" || { echo "Error while deleting the maintenance.flag" ; exit 1; }
+fi
+
 echo
-echo "Deleting maintenance.flag"
-echo "-------------------------"
-rm "${RELEASEFOLDER}/htdocs/maintenance.flag" || { echo "Error while deleting the maintenance.flag" ; exit 1; }
+echo "Successfully completed installation."
+echo
