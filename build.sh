@@ -59,6 +59,11 @@ touch htdocs/maintenance.flag
 # Create package
 if [ ! -d "artifacts/" ] ; then mkdir artifacts/ ; fi
 
+# Backwards compatibility in case tar_excludes.txt doesn't exist
+if [ ! -f "Configuration/tar_excludes.txt" ] ; then
+    touch Configuration/tar_excludes.txt
+fi
+
 BASEPACKAGE="artifacts/${FILENAME}"
 echo "Creating base package '${BASEPACKAGE}'"
 tar -vczf "${BASEPACKAGE}" \
