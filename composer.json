@@ -1,5 +1,5 @@
 {
-    "name":"AOEPeople/magento-deployscripts",
+    "name":"aoepeople/magento-deployscripts",
     "description":"Collection of scripts for Magento builds and deployments",
     "minimum-stability":"dev",
     "authors":[
