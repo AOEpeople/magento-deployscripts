@@ -38,13 +38,12 @@ function cleanup {
 }
 
 if [[ "${SYSTEMSTORAGEPATH}" =~ ^s3:// ]] ; then
-
     SYSTEMSTORAGE_LOCAL=`mktemp -d`
     trap cleanup EXIT
 
     if [ -z "${AWSCLIPROFILE}" ] ; then echo "No awsCliProfile given"; usage 1; fi
     echo "Downloading systemstorage from S3"
-    aws --profile ${AWSCLIPROFILE} s3 cp --recursive "${SYSTEMSTORAGEPATH}" "${SYSTEMSTORAGE_LOCAL}" || { echo "Error while downloading package from S3" ; exit 1; }
+    aws --profile ${AWSCLIPROFILE} s3 sync --delete "${SYSTEMSTORAGEPATH}" "${SYSTEMSTORAGE_LOCAL}" || { echo "Error while syncing files from S3 to local" ; exit 1; }
 else
     SYSTEMSTORAGE_LOCAL=${SYSTEMSTORAGEPATH}
 fi
