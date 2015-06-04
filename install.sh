@@ -116,8 +116,8 @@ echo
 
 
 echo
-echo "Triggering Magento setup scripts vi n98-magerun"
-echo "-----------------------------------------------"
+echo "Triggering Magento setup scripts via n98-magerun"
+echo "------------------------------------------------"
 cd -P "${RELEASEFOLDER}/htdocs/" || { echo "Error while switching to htdocs directory" ; exit 1; }
 ../tools/n98-magerun.phar sys:setup:run || { echo "Error while triggering the update scripts using n98-magerun" ; exit 1; }
 
