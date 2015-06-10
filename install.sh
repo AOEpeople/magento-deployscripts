@@ -108,10 +108,14 @@ cd "${RELEASEFOLDER}/htdocs" || { echo "Error while switching to htdocs director
 echo
 
 
-#echo
-#echo "Setting revalidate class path cache flag (Aoe_ClassPathCache)"
-#cd "${RELEASEFOLDER}/htdocs/shell" || { echo "Error while switching to htdocs/shell directory" ; exit 1; }
-#php aoe_classpathcache.php -action setRevalidateFlag || { echo "Error while revalidating Aoe_ClassPathCache" ; exit 1; }
+
+if [ -f "${RELEASEFOLDER}/htdocs/shell/aoe_classpathcache.php" ] ; then
+    echo
+    echo "Setting revalidate class path cache flag (Aoe_ClassPathCache)"
+    echo "-------------------------------------------------------------"
+    cd "${RELEASEFOLDER}/htdocs/shell" || { echo "Error while switching to htdocs/shell directory" ; exit 1; }
+    php aoe_classpathcache.php -action setRevalidateFlag || { echo "Error while revalidating Aoe_ClassPathCache" ; exit 1; }
+fi
 
 
 
