@@ -105,7 +105,7 @@ elif [[ "${PACKAGEURL}" =~ ^https?:// ]] ; then
     fi
 elif [[ "${PACKAGEURL}" =~ ^s3:// ]] ; then
     echo -n "Downloading base package via S3"
-    if [ -z "${USES3CMD}" ] ; then
+    if [ "${USES3CMD}" == 0 ] ; then
         echo " (via aws cli)";
         aws --profile ${AWSCLIPROFILE} s3 cp "${PACKAGEURL}" "${TMPDIR}/package.tar.gz" || { echo "Error while downloading base package from S3" ; exit 1; }
     else
@@ -114,7 +114,7 @@ elif [[ "${PACKAGEURL}" =~ ^s3:// ]] ; then
     fi
     if [ "${EXTRA}" == 1 ] ; then
         echo -n "Downloading extra package via S3"
-        if [ -z "${USES3CMD}" ] ; then
+        if [ "${USES3CMD}" == 0 ] ; then
             echo " (via aws cli)";
             aws --profile ${AWSCLIPROFILE} s3 cp "${EXTRAPACKAGEURL}" "${TMPDIR}/package.extra.tar.gz" || { echo "Error while downloading extra package from S3" ; exit 1; }
         else
