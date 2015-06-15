@@ -46,7 +46,7 @@ USES3CMD=0
 while getopts 'r:t:u:p:e:a:dc' OPTION ; do
 case "${OPTION}" in
         r) PACKAGEURL="${OPTARG}";;
-        t) ENVROOTDIR="${OPTARG}";;
+        t) ENVROOTDIR="${OPTARG%/}";;
         u) USERNAME="${OPTARG}";;
         p) PASSWORD="${OPTARG}";;
         e) ENVIRONMENT="${OPTARG}";;
@@ -90,7 +90,7 @@ EXTRAPACKAGEURL=${PACKAGEURL/.tar.gz/.extra.tar.gz}
 
 if [ -f "${PACKAGEURL}" ] ; then
     cp "${PACKAGEURL}" "${TMPDIR}/package.tar.gz" || { echo "Error while copying base package" ; exit 1; }
-    if [ ! -z "${EXTRA}" ] ; then
+    if [ "${EXTRA}" == 1 ] ; then
         cp "${EXTRAPACKAGEURL}" "${TMPDIR}/package.extra.tar.gz" || { echo "Error while copying extra package" ; exit 1; }
     fi
 elif [[ "${PACKAGEURL}" =~ ^https?:// ]] ; then
@@ -99,7 +99,7 @@ elif [[ "${PACKAGEURL}" =~ ^https?:// ]] ; then
     fi
     echo "Downloading package via http"
     wget --auth-no-challenge "${CREDENTIALS}" "${PACKAGEURL}" -O "${TMPDIR}/package.tar.gz" || { echo "Error while downloading base package from http" ; exit 1; }
-    if [ ! -z "${EXTRA}" ] ; then
+    if [ "${EXTRA}" == 1 ] ; then
         echo "Downloading extra package via http"
         wget --auth-no-challenge "${CREDENTIALS}" "${EXTRAPACKAGEURL}" -O "${TMPDIR}/package.extra.tar.gz" || { echo "Error while downloading extra package from http" ; exit 1; }
     fi
@@ -112,7 +112,7 @@ elif [[ "${PACKAGEURL}" =~ ^s3:// ]] ; then
         echo " (via s3cmd)";
         s3cmd get "${PACKAGEURL}" "${TMPDIR}/package.tar.gz" || { echo "Error while downloading base package from S3" ; exit 1; }
     fi
-    if [ ! -z "${EXTRA}" ] ; then
+    if [ "${EXTRA}" == 1 ] ; then
         echo -n "Downloading extra package via S3"
         if [ -z "${USES3CMD}" ] ; then
             echo " (via aws cli)";
@@ -131,10 +131,13 @@ fi
 # Step 2: extract files into release folder
 ########################################################################################################################
 
+echo "Creating release folder"
+mkdir "${RELEASEFOLDER}" | { echo "Error while create release folder" ; exit 1; }
+
 echo "Extracting base package"
 tar xzf "${TMPDIR}/package.tar.gz" -C "${RELEASEFOLDER}" || { echo "Error while extracting base package" ; exit 1; }
 
-if [ ! -z "${EXTRA}" ] ; then
+if [ "${EXTRA}" == 1 ] ; then
     echo "Extracting extra package on top of base package"
     tar xzf "${TMPDIR}/package.extra.tar.gz" -C "${RELEASEFOLDER}" || { echo "Error while extracting extra package" ; exit 1; }
 fi
