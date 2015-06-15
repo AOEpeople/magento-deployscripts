@@ -132,7 +132,7 @@ fi
 ########################################################################################################################
 
 echo "Creating release folder"
-mkdir "${RELEASEFOLDER}" | { echo "Error while create release folder" ; exit 1; }
+mkdir "${RELEASEFOLDER}" || { echo "Error while creating release folder" ; exit 1; }
 
 echo "Extracting base package"
 tar xzf "${TMPDIR}/package.tar.gz" -C "${RELEASEFOLDER}" || { echo "Error while extracting base package" ; exit 1; }
