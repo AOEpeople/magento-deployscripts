@@ -1,20 +1,44 @@
 #!/bin/bash
 
 function usage {
+    echo ""
     echo "Usage:"
-    echo " $0 -r <packageUrl> -t <targetDir> -e <environment> [-u <downloadUsername>] [-p <downloadPassword>] [-a <awsCliProfile>] [-d]"
-    echo " -r     Package url (http, S3 or local file)"
-    echo " -t     Target dir"
-    echo " -u     Download username"
-    echo " -p     Download password"
-    echo " -a     aws cli profile (defaults to 'default')"
-    echo " -d     Also download and install .extra.tar.gz package"
+    echo ""
+    echo "$0 -r <packageUrl> -t <targetDir> -e <environment> [-u <downloadUsername>] [-p <downloadPassword>] [-a <awsCliProfile>] [-d] [-c]"
+    echo ""
+    echo "   -r     Package url (http, S3 or local file)"
+    echo "   -t     Target dir"
+    echo "   -d     Also download and install .extra.tar.gz package"
+    echo ""
+    echo "          [http(s)]"
+    echo "   -u     Download username (only used for packages via http(s))"
+    echo "   -p     Download password (only used for packages via http(s))"
+    echo ""
+    echo "          [aws cli (default)]"
+    echo "   -a     aws cli profile, defaults to 'default' (only used for aws cli, not s3cmd)"
+    echo ""
+    echo "          [s3cmd]"
+    echo "   -c     Use s3cmd instead of aws cli to download the package"
+    echo ""
+    echo ""
+    echo "Examples:"
+    echo "  Install extra package on devbox (note the -d option):"
+    echo "    B=42; $0 -d -e devbox -r s3://mybucket/jobs/acme_build/$B/acme.tar.gz -t /var/www/acme/devbox/ -a awscliprofile"
+    echo "  Install production package:"
+    echo "    B=42; $0 -e production -r s3://mybucket/jobs/acme_build/$B/acme.tar.gz -t /var/www/acme/production/ -a awscliprofile"
+    echo "  Install via http:"
+    echo "    B=42; $0 -e production -r http://jenkins/jobs/acme_build/$B/acme.tar.gz -u username -p password -t /var/www/acme/production/"
+    echo "  Install via local file:"
+    echo "    B=42; $0 -e production -r /path/to/$B/acme.tar.gz -t /var/www/acme/integration/"
+    echo "  Use s3cmd instead of aws cli (note the -c option). s3cmd must already be configured at this point."
+    echo "    B=42; $0 -e devbox -c s3://mybucket/jobs/acme_build/$B/acme.tar.gz -t /var/www/acme/production/"
     echo ""
     exit $1
 }
 
 AWSCLIPROFILE='default'
 EXTRA=0
+USES3CMD=0
 
 while getopts 'r:t:u:p:e:a:d' OPTION ; do
 case "${OPTION}" in
@@ -25,15 +49,16 @@ case "${OPTION}" in
         e) ENVIRONMENT="${OPTARG}";;
         a) AWSCLIPROFILE="${OPTARG}";;
         d) EXTRA=1;;
+        c) USES3CMD=1;;
         \?) echo; usage 1;;
     esac
 done
 
-if [ -z "${ENVIRONMENT}" ]; then echo "ERROR: Please provide an environment code (e.g. -e staging)"; exit 1; fi
+if [ -z "${ENVIRONMENT}" ]; then echo "ERROR: Please provide an environment code (e.g. -e staging)"; usage 1; fi
 
 # Check if releases folder exists
 RELEASES="${ENVROOTDIR}/releases"
-if [ ! -d "${RELEASES}" ] ; then echo "Releases dir ${RELEASES} not found"; exit 1; fi
+if [ ! -d "${RELEASES}" ] ; then echo "Releases dir ${RELEASES} not found"; usage 1; fi
 
 # Check if the shared folder exists
 SHAREDFOLDER="${ENVROOTDIR}/shared"
@@ -69,11 +94,23 @@ elif [[ "${PACKAGEURL}" =~ ^https?:// ]] ; then
         wget --auth-no-challenge "${CREDENTIALS}" "${EXTRAPACKAGEURL}" -O "${TMPDIR}/package.extra.tar.gz" || { echo "Error while downloading extra package from http" ; exit 1; }
     fi
 elif [[ "${PACKAGEURL}" =~ ^s3:// ]] ; then
-    echo "Downloading package via S3"
-    aws --profile ${AWSCLIPROFILE} s3 cp "${PACKAGEURL}" "${TMPDIR}/package.tar.gz" || { echo "Error while downloading base package from S3" ; exit 1; }
+    echo -n "Downloading base package via S3"
+    if [ -z "${USES3CMD}" ] ; then
+        echo " (via aws cli)";
+        aws --profile ${AWSCLIPROFILE} s3 cp "${PACKAGEURL}" "${TMPDIR}/package.tar.gz" || { echo "Error while downloading base package from S3" ; exit 1; }
+    else
+        echo " (via s3cmd)";
+        s3cmd cp "${PACKAGEURL}" "${TMPDIR}/package.tar.gz" || { echo "Error while downloading base package from S3" ; exit 1; }
+    fi
     if [ ! -z "${EXTRA}" ] ; then
-        echo "Downloading extra package via S3"
-        aws --profile ${AWSCLIPROFILE} s3 cp "${EXTRAPACKAGEURL}" "${TMPDIR}/package.extra.tar.gz" || { echo "Error while downloading extra package from S3" ; exit 1; }
+        echo -n "Downloading extra package via S3"
+        if [ -z "${USES3CMD}" ] ; then
+            echo " (via aws cli)";
+            aws --profile ${AWSCLIPROFILE} s3 cp "${EXTRAPACKAGEURL}" "${TMPDIR}/package.extra.tar.gz" || { echo "Error while downloading extra package from S3" ; exit 1; }
+        else
+            echo " (via s3cmd)";
+            s3cmd "${EXTRAPACKAGEURL}" "${TMPDIR}/package.extra.tar.gz" || { echo "Error while downloading extra package from S3" ; exit 1; }
+        fi
     fi
 fi
 
