@@ -40,7 +40,7 @@ AWSCLIPROFILE='default'
 EXTRA=0
 USES3CMD=0
 
-while getopts 'r:t:u:p:e:a:d:c' OPTION ; do
+while getopts 'r:t:u:p:e:a:dc' OPTION ; do
 case "${OPTION}" in
         r) PACKAGEURL="${OPTARG}";;
         t) ENVROOTDIR="${OPTARG}";;
@@ -113,6 +113,8 @@ elif [[ "${PACKAGEURL}" =~ ^s3:// ]] ; then
         fi
     fi
 fi
+
+exit;
 
 # Unpack the package
 mkdir "${TMPDIR}/package" || { echo "Error while creating temporary package folder" ; exit 1; }
