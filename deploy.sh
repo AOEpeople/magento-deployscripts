@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Magento Deployment Script
+# Author: Fabrizio Branca
+
 function usage {
     echo ""
     echo "Usage:"
@@ -58,15 +61,17 @@ if [ -z "${ENVIRONMENT}" ]; then echo "ERROR: Please provide an environment code
 
 # Check if releases folder exists
 RELEASES="${ENVROOTDIR}/releases"
+RELEASENAME="build_$(date +%Y%m%d%H%M%S)"
+RELEASEFOLDER="${RELEASES}/${RELEASENAME}"
 if [ ! -d "${RELEASES}" ] ; then echo "Releases dir ${RELEASES} not found"; usage 1; fi
+if [ -d "${RELEASEFOLDER}" ] ; then echo "Release folder ${RELEASEFOLDER} already exists"; exit 1; fi
 
-# Check if the shared folder exists
+# Check if the shared folder exists (but creating the symlinks is the installer script's responsibilty)
 SHAREDFOLDER="${ENVROOTDIR}/shared"
 SHAREDFOLDERS=( "var" "media" )
 if [ ! -d "${SHAREDFOLDER}" ] ; then echo "Shared folder ${SHAREDFOLDER} not found"; exit 1; fi
-for i in "${SHAREDFOLDERS[@]}" ; do
-    if [ ! -d "${SHAREDFOLDER}/$i" ] ; then echo "Shared folder ${SHAREDFOLDER}/$i not found"; exit 1; fi
-done
+for i in "${SHAREDFOLDERS[@]}" ; do if [ ! -d "${SHAREDFOLDER}/$i" ] ; then echo "Shared folder ${SHAREDFOLDER}/$i not found"; exit 1; fi; done
+
 
 # Create tmp dir and make sure it's going to be deleted in any case
 TMPDIR=`mktemp -d`
@@ -77,6 +82,11 @@ function cleanup {
 trap cleanup EXIT
 
 EXTRAPACKAGEURL=${PACKAGEURL/.tar.gz/.extra.tar.gz}
+
+
+########################################################################################################################
+# Step 1: get the package via http, S3 or local file
+########################################################################################################################
 
 if [ -f "${PACKAGEURL}" ] ; then
     cp "${PACKAGEURL}" "${TMPDIR}/package.tar.gz" || { echo "Error while copying base package" ; exit 1; }
@@ -114,57 +124,43 @@ elif [[ "${PACKAGEURL}" =~ ^s3:// ]] ; then
     fi
 fi
 
-exit;
 
-# Unpack the package
-mkdir "${TMPDIR}/package" || { echo "Error while creating temporary package folder" ; exit 1; }
+
+
+########################################################################################################################
+# Step 2: extract files into release folder
+########################################################################################################################
+
 echo "Extracting base package"
-tar xzf "${TMPDIR}/package.tar.gz" -C "${TMPDIR}/package" || { echo "Error while extracting base package" ; exit 1; }
+tar xzf "${TMPDIR}/package.tar.gz" -C "${RELEASEFOLDER}/package" || { echo "Error while extracting base package" ; exit 1; }
 
 if [ ! -z "${EXTRA}" ] ; then
     echo "Extracting extra package on top of base package"
-    tar xzf "${TMPDIR}/package.extra.tar.gz" -C "${TMPDIR}/package" || { echo "Error while extracting extra package" ; exit 1; }
+    tar xzf "${TMPDIR}/package.extra.tar.gz" -C "${RELEASEFOLDER}/package" || { echo "Error while extracting extra package" ; exit 1; }
 fi
 
-if [ ! -f "${TMPDIR}/package/build.txt" ] ; then echo "Could not find ${TMPDIR}/package/build.txt"; exit 1; fi
-
-BUILD_NUMBER=`cat ${TMPDIR}/package/build.txt`
-if [ -z "${BUILD_NUMBER}" ] ; then echo "Error reading build number"; exit 1; fi
-
-RELEASENAME="build_${BUILD_NUMBER}"
-
-# check if current release already exist
-RELEASEFOLDER="${RELEASES}/${RELEASENAME}"
-if [ -d "${RELEASEFOLDER}" ] ; then echo "Release folder ${RELEASEFOLDER} already exists"; exit 1; fi
-
-# Move files to release folder
-mv "${TMPDIR}/package" "${RELEASEFOLDER}" || { echo "Error while moving package folder" ; exit 1; }
 
 
-# Install the package
+
+########################################################################################################################
+# Step 3: Trigger installation
+########################################################################################################################
+
 if [ ! -f "${RELEASEFOLDER}/tools/install.sh" ] ; then echo "Could not find installer" ; exit 1; fi
 ${RELEASEFOLDER}/tools/install.sh -e "${ENVIRONMENT}" || { echo "Installing package failed"; exit 1; }
 
+
+
+
+########################################################################################################################
+# Step 4: Update symlink
+########################################################################################################################
+
 echo
-echo "Updating release symlinks"
-echo "-------------------------"
+echo "Updating release symlink"
+echo "------------------------"
 
-echo "Setting next symlink (${RELEASES}/next) to this release (${RELEASEFOLDER})"
-ln -sf "next" "${RELEASES}/next" || { echo "Error while symlinking the 'next' folder"; exit 1; }
+echo "Settings current (${RELEASES}/current) to release folder (${RELEASENAME})"
+ln -sfn "${RELEASENAME}" "${RELEASES}/current" || { echo "Error while symlinking 'current' to release folder" ; exit 1; }
 
-# If you want to manually check before switching the other symlinks, this would be a good point to stop (maybe add another parameter to this script)
-
-#if [ -n "${CURRENT_BUILD}" ] ; then
-#    echo "Setting previous (${RELEASES}/previous) to current (${CURRENT_BUILD})"
-#    ln -sfn "${CURRENT_BUILD}" "${RELEASES}/previous"
-#fi
-
-echo "Settings latest (${RELEASES}/latest) to release folder (${RELEASENAME})"
-ln -sfn "${RELEASENAME}" "${RELEASES}/latest" || { echo "Error while symlinking 'latest' to release folder" ; exit 1; }
-
-echo "Settings current (${RELEASES}/current) to 'latest'"
-ln -sfn "latest" "${RELEASES}/current" || { echo "Error while symlinking 'current' to 'latest'" ; exit 1; }
 echo "--> THIS PACKAGE IS LIVE NOW! <--"
-
-echo "Deleting next symlink (${RELEASES}/next)"
-unlink "${RELEASES}/next"
