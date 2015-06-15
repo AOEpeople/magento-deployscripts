@@ -40,7 +40,7 @@ AWSCLIPROFILE='default'
 EXTRA=0
 USES3CMD=0
 
-while getopts 'r:t:u:p:e:a:d' OPTION ; do
+while getopts 'r:t:u:p:e:a:d:c' OPTION ; do
 case "${OPTION}" in
         r) PACKAGEURL="${OPTARG}";;
         t) ENVROOTDIR="${OPTARG}";;
