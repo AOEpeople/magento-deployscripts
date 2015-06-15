@@ -132,11 +132,11 @@ fi
 ########################################################################################################################
 
 echo "Extracting base package"
-tar xzf "${TMPDIR}/package.tar.gz" -C "${RELEASEFOLDER}/package" || { echo "Error while extracting base package" ; exit 1; }
+tar xzf "${TMPDIR}/package.tar.gz" -C "${RELEASEFOLDER}" || { echo "Error while extracting base package" ; exit 1; }
 
 if [ ! -z "${EXTRA}" ] ; then
     echo "Extracting extra package on top of base package"
-    tar xzf "${TMPDIR}/package.extra.tar.gz" -C "${RELEASEFOLDER}/package" || { echo "Error while extracting extra package" ; exit 1; }
+    tar xzf "${TMPDIR}/package.extra.tar.gz" -C "${RELEASEFOLDER}" || { echo "Error while extracting extra package" ; exit 1; }
 fi
 
 
