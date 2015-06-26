@@ -21,7 +21,7 @@
 #    - The following common utilities must be locatable in your $PATH
 #       grep (POSIX), find, ln, cp, basename, dirname, readlink
 
-version="1.9.7"
+version="1.12"
 script=${0##*/}
 usage="\
 Module Manager (v$version)
@@ -37,12 +37,16 @@ Global Commands:
   deploy-all         deploy all modules (no VCS interaction)
   repair             rebuild all modman-created symlinks (no updates performed)
   clean              clean up broken symlinks (run this after deleting a module)
+  automodman         loops through module directory:
+                     - asks to include files & directories in new modman file
+                     - does not create symlinks
   --help             display this help message
   --tutorial         show a brief tutorial on using modman
   --version          display the modman script's version
   [--force]          overwrite existing files, ignore untrusted cert warnings
   [--no-local]       skip processing of modman.local files
   [--no-clean]       skip cleaning of broken symlinks
+  [--no-shell]       skip processing @shell lines
 
 Module Commands:
   $script <command> [<module>] [<options>] [[--] <VCS options>]
@@ -53,10 +57,14 @@ Module Commands:
   link <path>        link to a module that already exists on the local filesystem
   update             update module using the appropriate VCS
   deploy             deploy an existing module (VCS not required or used)
+  undeploy           remove an existing module without deleting the files
+  skip               prevent a module from deploying with deploy-all
+  unskip             re-enable a module to be deployed with deploy-all
   remove             remove a module (DELETES MODULE FILES)
   [--force]          overwrite existing files, ignore untrusted cert warnings
   [--no-local]       skip processing of modman.local files
   [--no-clean]       skip cleaning of broken symlinks
+  [--no-shell]       skip processing @shell lines
   [--basedir <path>] on checkout/clone, specifies a base for module deployment
   [--copy]           deploy by copying files instead of symlinks
   [<VCS options>]    specify additional parameters to VCS checkout/clone
@@ -200,7 +208,7 @@ bsd_stat ()
   esac
 }
 pager=${PAGER:-$(which pager &> /dev/null)}
-if [ -n "$pager" ]; then
+if [ -z "$pager" ]; then
   pager=less
 fi
 
@@ -245,16 +253,34 @@ echo_b ()
   fi
 }
 
+#############################################################
+# Colors in terminal
+yellow () { if [ $ISTTY -eq 1 ]; then tput setaf 3; fi; }
+red () { if [ $ISTTY -eq 1 ]; then tput setaf 1; fi; }
+
+#############################################################
+# Handling warning messages
+warning ()
+{
+  echo -e "$(bold)$(yellow)WARNING:$(unbold) "$1
+}
+
+#############################################################
+# Handling Error messages
+error ()
+{
+  echo -e "$(bold)$(red)ERROR:$(unbold) "$1
+}
 
 #############################################################
 # Check for existence of a module directory and modman file
 require_wc ()
 {
   if ! [ -d "$mm/$1" ]; then
-    echo_b "ERROR: $1 has not been checked out."; return 1
+    error "$1 has not been checked out."; return 1
   fi
   if ! [ -r "$mm/$1/modman" ]; then
-    echo_b "ERROR: $1 does not contain a \"modman\" module description file."; return 1
+    error "$1 does not contain a \"modman\" module description file."; return 1
   fi
   return 0
 }
@@ -312,10 +338,73 @@ set_basedir ()
     echo -e "# This file was created by modman. Module base directory:\n$basedir" \
       > "$module_dir/.basedir"
     if ! [ $? ]; then
-      echo "ERROR: Could not write to file: $module_dir/.basedir."
+      error "Could not write to file: $module_dir/.basedir."
       return 1
     fi
   fi
+  return 0
+}
+
+get_skipped ()
+{
+  local module=$1
+  if [ -f "$root/.modman-skip" ]; then
+    for line in $(grep -v -e '^#' "$root/.modman-skip"); do
+      if [ $line == $module ]; then
+        return 0
+      fi
+    done
+  fi
+  return 1
+}
+
+set_skipped ()
+{
+  local module=$1
+  local skip=$2
+  local SKIP_FILE="$root/.modman-skip"
+
+  if ! [ -f "$SKIP_FILE" ]; then
+    echo "# This file was created by modman. The following modules won't be deployed by deploy-all." \
+      > "$root/.modman-skip"
+    if ! [ $? ]; then
+      error "Could not write to file: $SKIP_FILE"
+      return 1
+    fi
+  fi
+
+  if [ "$skip" = 1 ]; then
+    if get_skipped $module; then
+      echo "Module $module already skipped."
+      exit 1
+    else
+      echo $module >> "$SKIP_FILE"
+      echo "Module $module added to skip list."
+    fi
+  else
+    grep -v "^$module$" "$SKIP_FILE" > "$SKIP_FILE.tmp"; mv "$SKIP_FILE.tmp" "$SKIP_FILE" 
+    echo "Module $module removed from skip list."
+  fi
+
+  return 0
+}
+
+get_abs_filename() {
+  if [ -d "$(dirname "$1")" ]; then
+    echo "$(cd "$(dirname "$1")/$(dirname "$(readlink "$1")")" && pwd)/$(basename "$1")"
+  fi
+}
+
+remove_module_links ()
+{
+  echo "Removing links for module $module."
+  local module_dir="$mm/$module"
+  for line in $(find $root -type l); do
+    if [[ $(get_abs_filename "$line") =~ ^"$module_dir".* ]]; then
+      rm "$line"
+    fi
+  done
+
   return 0
 }
 
@@ -351,7 +440,7 @@ apply_modman_file ()
 
     # Sanity check for empty data
     if [ -z "$target" -o -z "$real" ]; then
-      echo_b -e "ERROR: Invalid input in modman file ($relpath):\n $line"
+      error "Invalid input in modman file ($relpath):\n $line"
       return 1
     fi
 
@@ -363,7 +452,7 @@ apply_modman_file ()
       import=$module_dir/${import_path%/}/modman
       if ! [ -r "$import" ]; then
         relimport=${import:$((${#mmroot}+1))}
-        echo_b -e "ERROR: modman file not found ($relimport):\n $line"
+        error "modman file not found ($relimport):\n $line"
         return 1
       fi
 
@@ -374,7 +463,7 @@ apply_modman_file ()
         import_base=${basedir}${import_base%%/}
         if ! [ -d "$root/$import_base" ]; then
           if ! mkdir -p "$root/$import_base"; then
-            echo "ERROR: Could not create import base directory: $import_base"
+            error "Could not create import base directory: $import_base"
             return 1
           fi
           echo "Created import base directory: $import_base"
@@ -391,6 +480,7 @@ apply_modman_file ()
     # Run commands on the shell!
     # temporary file is workaround so that script can receive stdin
     if [ "$target" = "@shell" ]; then
+      [ $NOSHELL -eq 0 ] || continue
       cd "$module_dir"
       export PROJECT=$root/${basedir%%/}
       export MODULE=$module_dir
@@ -404,6 +494,8 @@ apply_modman_file ()
     # Create symlink to target
     local src=$module_dir/$target
     local dest=$root/${basedir}${real%/}
+    dest=${dest/\/\//\/} # Replace // with /
+    dest=${dest%/} # Strip trailing /
 
     # Handle globbing (extended globbing enabled)
     shopt -s extglob
@@ -417,7 +509,7 @@ apply_modman_file ()
     # Handle aliases that do not exist
     if ! [ -e "$src" ];
     then
-      echo -e "$(bold)WARNING:$(unbold) Target does not exist ($relpath):\n $line"
+      warning "Target does not exist ($relpath):\n $line"
       continue
     fi
 
@@ -438,15 +530,32 @@ apply_path ()
 {
   local src="$1"; local dest="$2"; local target="$3"; local real="$4"; local line="$5"
 
-  # Make symlinks relative to mmroot only if the base path is not itself in a symlinked path
-  if [ $COPY -eq 0 ] && [ "${dest%/*}" == "$($readlink_missing "${dest%/*}")" ]; then
-    local reldest=${dest#$mmroot/}; reldest=${reldest#/}
-    if [ "$reldest" != "${reldest%/*}" ]; then
-      reldest=$(IFS=/; for d in ${reldest%/*}; do echo -n '../'; done)
+  # Make symlinks relative
+  if [ $COPY -eq 0 ]; then
+    local realpath=$($readlink_missing "${dest%/*}"); local commonpath=""
+    if [ "${dest%/*}" == "${realpath}" ]; then
+      # Use modman root as common path if destination is not itself a symlinked path
+      commonpath="${mmroot%/}"
     else
-      reldest=""
+      # Search for longest common path as symlink target
+      for ((i=0; i<${#dest}; i++)); do
+        if [[ "${dest:i:1}" != "${realpath:i:1}" ]]; then
+          commonpath="${dest:0:i}"
+          commonpath="${commonpath%/*}"
+          break
+        fi
+      done
     fi
-    src=${reldest}${src#$mmroot/}
+    # Replace destination (less common path) with ../*
+    if [ "$commonpath" != "" ]; then
+      local reldest="${dest#$commonpath/}"
+      if [ "$reldest" != "${reldest%/*}" ]; then
+        reldest=$(IFS=/; for d in ${reldest%/*}; do echo -n '../'; done)
+      else
+        reldest=""
+      fi
+      src="${reldest}${src#$commonpath/}"
+    fi
   fi
 
   # Handle cases where files already exist at the destination or link does not match expected destination
@@ -455,10 +564,13 @@ apply_path ()
     if ! [ -L "$dest" ] && [ $FORCE -eq 0 ]; then
       echo_b "CONFLICT: $($stat_type "$dest") already exists and is not a symlink:"
       echo_b " $line"
+      if [[ "$line" != *"$real"* ]]; then
+        echo " $($stat_type "$dest") path: $real"
+      fi
       echo   "(Run with $(bold)--force$(unbold) to force removal of existing files and directories.)"
       return 1
     elif ! [ -L "$dest" ] || [ "$src" != "$(readlink "$dest")" ]; then
-      echo "$(bold)WARNING:$(unbold) Removing conflicting $($stat_type "$dest"): $dest"
+      warning "Removing conflicting $($stat_type "$dest"): $dest"
       rm -rf "$dest" || return 1
     fi
   fi
@@ -472,7 +584,7 @@ apply_path ()
     fi
     # Create parent directories
     if ! mkdir -p "${dest%/*}"; then
-      echo_b -e "ERROR: Unable to create parent directory (${dest%/*}):\n $line"
+      error "Unable to create parent directory (${dest%/*}):\n $line"
       return 1
     fi
     # Symlink or copy
@@ -487,11 +599,108 @@ apply_path ()
     if [ $success -eq 1 ]; then
       printf " Applied: %-30s  %s\n" "$target" "$real"
     else
-      echo_b -e "ERROR: Unable to $verb ($dest):\n $line"
+      error "Unable to $verb ($dest):\n $line"
       return 1
     fi
   fi
   return 0
+}
+###########################################################################
+# Automatically create a modman file
+run_automodman () #"$module" "$mm" "$wc_dir" "$wc_desc"
+{
+  # returns 0 on success 1 on error  
+  amodule=$1
+  amm=$2
+  awc_dir=$3
+  awc_desc=$4
+
+  #echo "building modman file for $amodule"
+  #echo "in base directory $amm"
+  #echo "in working copy $awc_dir"
+  #echo "modman file will be or is $awc_desc"
+  
+  #does the modman file exist?
+  #yes
+  if [ -r "$awc_desc" ]; then
+    echo "$awc_desc file already exists"
+    return 0 #exit without error
+    
+  #no
+  else
+    #touch modman
+    echo "creating modman file for $amodule"
+    touch $awc_desc
+  fi
+  #loop through files
+  declare -a incpaths
+
+  for f in $(find $awc_dir \( ! -iname 'modman' ! -regex "$awc_dir.*/\..*" \)) #ignore hidden files and modman
+    do  
+      #strip path down
+      alngth=${#awc_dir} #length of working directory to remove from path
+      alngth=$((alngth+1)) #increase by one to account for the fact we added a slash
+      pathname=${f:$alngth}
+
+      #first f tends to be empty because of our stripping the path down so test for it -n is default operator
+      if [ "$pathname" ]; then
+
+        prevmatch=0
+        #todo: possibly there is a neater way to do this without a loop??
+        for incPath in "${incpaths[@]}" #loop through incpaths
+        do  
+          if [[ "$pathname" != "${pathname/$incPath/}" ]]; then
+            prevmatch=1
+          fi
+        done
+        
+        #if substring then do recurse        
+        if [[ $prevmatch -eq 0 ]]; then #make sure we have not previously matched
+
+          #pre-existing path: yes | no?      
+          if grep -rq "^[^#].*\s$pathname$" "${amm}/"*"/modman" #target is what is important so find end line not beginning line
+          then #pre-existing path: yes
+            echo "..."
+            echo "A path was found that exists in below modman description file" #error
+            grep -r --color=always "\s$pathname$" "${amm}/"*"/modman"
+            echo "It is therefore presently illegal for it to be included in this module." 
+            echo "..."
+            if [[ -d $f ]]; then
+                    incpaths+=("$pathname")
+                fi
+            read -p "press enter to continue..." goonthen
+          else #pre-existing path: no
+
+            read -p "include '$pathname': [N][y]" include #include path: yes | no?
+            if [[ "$include" == "" ]]; then
+                 include="N"
+            fi
+        
+            if [ "$include" == "y" -o "$include" == "Y" ]; then #include path: yes
+          
+              echo "..."
+              echo "You answered y:yes modman will include the path"
+              echo "..."
+
+              #write path to modman
+              echo "$pathname  $pathname" >> $awc_desc #substring ${var:start} 
+              #was it a directory or file
+              if [[ -d $f ]]; then
+                  incpaths+=("$pathname")
+              fi
+
+            elif [ "$include" == "n" -o "$include" == "N" ]; then #include path: no
+              echo "You answered N:no, modman is not including the path"
+            else
+              echo "Warning: you answered $include which is invalid, modman is not including path"  
+            fi    
+        
+          fi # test other modules for pre-existing path
+        fi # test prvious match
+      fi #continue
+    done #no more paths
+    #return success
+    return 0
 }
 
 ###########################################################################
@@ -499,7 +708,7 @@ apply_path ()
 get_tracking_branch ()
 {
   local tracking_branch=$(git rev-parse --symbolic-full-name --abbrev-ref @{u} 2> /dev/null)
-  if [ -n $tracking_branch -a "$tracking_branch" != "@{u}" ]; then
+  if [ -n "$tracking_branch" -a "$tracking_branch" != "@{u}" ]; then
     echo $tracking_branch
   fi
 }
@@ -511,7 +720,7 @@ _pwd=$(pwd -P)
 root=$_pwd
 while ! [ -d "$root/.modman" ]; do
   if [ "$root" = "/" ]; then echo -e $mm_not_found && exit 1; fi
-  cd .. || { echo -e "ERROR: Could not traverse up from $root\n$mm_not_found" && exit 1; }
+  cd .. || { error "Could not traverse up from $root\n$mm_not_found" && exit 1; }
   root=$(pwd)
 done
 
@@ -522,7 +731,7 @@ mm=$root/.modman      # path to .modman
 newroot=$(get_basedir "$mm")
 if [ -n "$newroot" ]; then
   cd "$mmroot/$newroot" || {
-    echo -e "ERROR: Could not change to basedir specified in .basedir file: $newroot"
+    error "Could not change to basedir specified in .basedir file: $newroot"
     exit 1
   }
   root=$(pwd)
@@ -530,16 +739,18 @@ fi
 
 # Check for common option overrides
 FORCE=0               # --force option off by default
-LOCAL=1               # --no-local option off by default
-COPY=0                # --copy option off by default
+NOLOCAL=0             # --no-local option off by default
 NOCLEAN=0             # --no-clean off by default
+NOSHELL=0             # --no-shell option off by default
+COPY=0                # --copy option off by default
 basedir=''
 while true; do
   case "$1" in
-    --force)    FORCE=1; shift ;;
-    --no-local) LOCAL=0; shift ;;
-    --copy)     COPY=1; shift ;;
-    --no-clean) NOCLEAN=1; shift ;;
+    --force)       FORCE=1; shift ;;
+    --no-local)    NOLOCAL=1; shift ;;
+    --no-clean)    NOCLEAN=1; shift ;;
+    --no-shell)    NOSHELL=1; shift ;;
+    --copy)        COPY=1; shift ;;
     --basedir)
       shift; basedir="$1"; shift
       if ! [ -n "$basedir" -a -d "$root/$basedir" ]; then
@@ -624,14 +835,18 @@ elif [ "$action" = "deploy-all" ]; then
   errors=0
   for module in $(ls -1 "$mm"); do
     test -d "$mm/$module" && require_wc "$module" || continue;
+    if get_skipped "$module"; then
+      echo "Skipping module $module due to .modman-skip file."
+      continue
+    fi
     echo "Deploying $module to $root"
     if apply_modman_file "$mm/$module/modman"; then
       echo -e "Deployment of '$module' complete.\n"
-      if [ $LOCAL -gt 0 -a -r "$mm/$module/modman.local" ]; then
+      if [ $NOLOCAL -eq 0 -a -r "$mm/$module/modman.local" ]; then
         apply_modman_file "$mm/$module/modman.local" && echo "Applied local modman file for $module"
       fi
     else
-      echo_b -e "Error occurred while deploying '$module'.\n"
+      error "Error occurred while deploying '$module'.\n"
       errors=$((errors+1))
     fi
   done
@@ -703,7 +918,7 @@ elif [ "$action" = "update-all" ]; then
     fi
     echo
     if [ $success -ne 1 ]; then
-      echo_b -e "Error occurred while updating $module\n"
+      error "Error occurred while updating $module\n"
       update_errors=$((update_errors+1))
     fi
   done
@@ -713,11 +928,11 @@ elif [ "$action" = "update-all" ]; then
     test -d "$mm/$module" && require_wc "$module" || continue;
     if apply_modman_file "$mm/$module/modman"; then
       echo -e "Deployment of '$module' complete.\n"
-      if [ $LOCAL -gt 0 -a -r "$mm/$module/modman.local" ]; then
+      if [ $NOLOCAL -eq 0 -a -r "$mm/$module/modman.local" ]; then
         apply_modman_file "$mm/$module/modman.local" && echo "Applied local modman file for $module"
       fi
     else
-      echo_b -e "Error occurred while deploying '$module'.\n"
+      error "Error occurred while deploying '$module'.\n"
       deploy_errors=$((deploy_errors+1))
     fi
   done
@@ -728,15 +943,15 @@ elif [ "$action" = "update-all" ]; then
 # Handle "repair" command
 elif [ "$action" = "repair" ]; then
   echo "Repairing links, do not interrupt."
-  mv "$mm" "$mm-repairing" || { echo_b "ERROR: Could not temporarily rename .modman directory."; exit 1; }
+  mv "$mm" "$mm-repairing" || { error "Could not temporarily rename .modman directory."; exit 1; }
   remove_dead_links
-  mv "$mm-repairing" "$mm" || { echo_b "ERROR: Could not restore .modman directory."; exit 1; }
+  mv "$mm-repairing" "$mm" || { error "Could not restore .modman directory."; exit 1; }
   for module in $(ls -1 "$mm"); do
     test -d "$mm/$module" && require_wc "$module" || continue;
     remove_basedirs "$module" &&
     apply_modman_file "$mm/$module/modman" &&
     echo -e "Repaired $module.\n"
-    if [ $LOCAL -gt 0 -a -r "$mm/$module/modman.local" ]; then
+    if [ $NOLOCAL -eq 0 -a -r "$mm/$module/modman.local" ]; then
       apply_modman_file "$mm/$module/modman.local" && echo "Applied local modman file for $module"
     fi
   done
@@ -755,7 +970,7 @@ fi
 # Handle all other module-specific commands
 #############################################
 
-REGEX_ACTION='^(update|deploy|checkout|clone|hgclone|link|remove)$'
+REGEX_ACTION='^(update|deploy|undeploy|skip|unskip|checkout|clone|hgclone|link|remove|automodman)$'
 REGEX_NEW_MODULE='^(checkout|clone|hgclone|link)$'
 REGEX_BAD_MODULE="($REGEX_ACTION| )"
 REGEX_MODULE='^[a-zA-Z0-9_-]+$'
@@ -809,10 +1024,11 @@ fi
 # Get optional args again (allow them to come after the module name)
 while true; do
   case "$1" in
-    --force)    FORCE=1; shift ;;
-    --no-local) LOCAL=0; shift ;;
-    --no-clean) NOCLEAN=1; shift ;;
-    --copy)     COPY=1; shift ;;
+    --force)       FORCE=1; shift ;;
+    --no-local)    NOLOCAL=1; shift ;;
+    --no-clean)    NOCLEAN=1; shift ;;
+    --no-shell)    NOSHELL=1; shift ;;
+    --copy)        COPY=1; shift ;;
     --basedir)
       shift; basedir="$1"; shift
       if ! [ -n "$basedir" -a -d "$root/$basedir" ]; then
@@ -830,6 +1046,9 @@ wc_desc=$wc_dir/modman    # path to modman structure descriptor file
 
 case "$action" in
 
+  automodman)
+    run_automodman "$module" "$mm" "$wc_dir" "$wc_desc"
+  ;;
   update)
     require_wc "$module" || exit 1
     cd "$wc_dir"
@@ -855,7 +1074,7 @@ case "$action" in
 
     remove_dead_links
     apply_modman_file "$wc_desc" && echo "Update of $module complete."
-    if [ $LOCAL -gt 0 -a -r "$wc_desc.local" ]; then
+    if [ $NOLOCAL -eq 0 -a -r "$wc_desc.local" ]; then
       apply_modman_file "$wc_desc.local" && echo "Applied local modman file for $module"
     fi
     ;;
@@ -916,7 +1135,7 @@ case "$action" in
       echo "Successfully $verb new module '$module'$using_basedir"
     else
       if [ -d "$wc_dir" ]; then rm -rf "$wc_dir"; fi
-      echo "Error trying to $action new module '$module', operation cancelled."
+      error "trying to $action new module '$module', operation cancelled."
       exit 1
     fi
     ;;
@@ -924,9 +1143,22 @@ case "$action" in
   deploy)
     require_wc "$module" || exit 1
     apply_modman_file "$wc_desc" && echo "$module has been deployed under $root"
-    if [ $LOCAL -gt 0 -a -r "$wc_desc.local" ]; then
+    if [ $NOLOCAL -eq 0 -a -r "$wc_desc.local" ]; then
       apply_modman_file "$wc_desc.local" && echo "Applied local modman file for $module"
     fi
+    ;;
+
+  undeploy)
+    require_wc "$module" || exit 1
+    remove_module_links "$module" || exit 1
+    ;;
+
+  skip)
+    set_skipped "$module" 1 || exit 1
+    ;;
+
+  unskip)
+    set_skipped "$module" 0 || exit 1
     ;;
 
   remove)
