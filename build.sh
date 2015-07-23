@@ -75,7 +75,7 @@ tar -vczf "${BASEPACKAGE}" \
 
 echo "Deleting files that made it into the base package"
 while read -r line; do
-    if [ -e "$line" ] && ([ ! -d "$line" ] || ([ -d "$line" ] && [ ! $(ls -A "$line") ])) ; then
+    if [ -e "$line" ] && ([ ! -d "$line" ] || ([ -d "$line" ] && [ ! "$(ls -A \"$line\")" ])) ; then
         rm -r "$line" || { echo "Deleting file/dir $line failed"; exit 1; }
     fi
 done < "tmp/base_files.txt"
