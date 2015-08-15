@@ -41,6 +41,14 @@ if [ ! -f 'tools/modman' ] ; then echo "Could not find modman script"; exit 1 ; 
 if [ ! -d '.modman' ] ; then echo "Could not find .modman directory"; exit 1 ; fi
 if [ ! -f '.modman/.basedir' ] ; then echo "Could not find .modman/.basedir"; exit 1 ; fi
 
+if [ -f vendor/aoepeople/magento-deployscripts/apply_patches.sh ] ; then
+    cd "${PROJECTROOTDIR}/htdocs" || { echo "Changing directory failed"; exit 1; }
+
+    bash ../vendor/aoepeople/magento-deployscripts/apply_patches.sh
+
+    cd ${PROJECTROOTDIR} || { echo "Changing directory failed"; exit 1; }
+fi
+
 # Run modman
 # This should be run during installation
 # tools/modman deploy-all --force
