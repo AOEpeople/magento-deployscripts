@@ -44,7 +44,7 @@ if [ ! -f '.modman/.basedir' ] ; then echo "Could not find .modman/.basedir"; ex
 if [ -f vendor/aoepeople/magento-deployscripts/apply_patches.sh ] ; then
     cd "${PROJECTROOTDIR}/htdocs" || { echo "Changing directory failed"; exit 1; }
 
-    bash ../vendor/aoepeople/magento-deployscripts/apply_patches.sh
+    bash ../vendor/aoepeople/magento-deployscripts/apply_patches.sh || { echo "Error while applying patches"; exit 1; }
 
     cd ${PROJECTROOTDIR} || { echo "Changing directory failed"; exit 1; }
 fi
