@@ -5,7 +5,8 @@
 
 # some basic checks
 if [ ! -f 'index.php' ] ; then echo "Could not find index.php"; exit 1 ; fi
-if [ ! -f 'app/etc/local.xml' ] ; then echo "Could not find app/etc/local.xml"; exit 1 ; fi
+if [ ! -d 'app/etc' ] ; then echo "Could not find app/etc"; exit 1 ; fi
+if [ ! -d 'app/code' ] ; then echo "Could not find app/code"; exit 1 ; fi
 if [ ! -d '../patches' ] ; then echo "Could not find ../patches"; exit 1 ; fi
 
 
@@ -42,3 +43,4 @@ find ../patches -iname '*.diff' -print0 | while read -d $'\0' file; do
         echo "Patch $filename applied successfully"
     fi
 done
+
