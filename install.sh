@@ -97,8 +97,12 @@ else
         cd "${RELEASEFOLDER}/htdocs" || { echo "Error while switching to htdocs directory" ; exit 1; }
         ../tools/apply.php "${ENVIRONMENT}" ../Configuration/settings.csv --groups db || { echo "Error while applying db settings" ; exit 1; }
 
+        if [ -z "${SYSTEM_STORAGE_ROOT_PATH}" ] ; then
+            SYSTEM_STORAGE_ROOT_PATH="/home/systemstorage/systemstorage/${PROJECT}/backup/${MASTER_SYSTEM}"
+        fi
+
         # Import systemstorage
-        ../tools/systemstorage_import.sh -p "${RELEASEFOLDER}/htdocs/" -s "/home/systemstorage/systemstorage/${PROJECT}/backup/${MASTER_SYSTEM}" || { echo "Error while importing systemstorage"; exit 1; }
+        ../tools/systemstorage_import.sh -p "${RELEASEFOLDER}/htdocs/" -s "${SYSTEM_STORAGE_ROOT_PATH}" || { echo "Error while importing systemstorage"; exit 1; }
     fi
 
 fi
