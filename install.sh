@@ -76,25 +76,33 @@ if [[ -n ${SKIPIMPORTFROMSYSTEMSTORAGE} ]]  && ${SKIPIMPORTFROMSYSTEMSTORAGE} ; 
     echo "Skipping import system storage backup because parameter was set"
 else
 
-    if [ ! -f "${RELEASEFOLDER}/Configuration/mastersystem.txt" ] ; then echo "Could not find mastersystem.txt"; exit 1; fi
-    MASTER_SYSTEM=`cat ${RELEASEFOLDER}/Configuration/mastersystem.txt`
-    if [ -z "${MASTER_SYSTEM}" ] ; then echo "Error reading master system"; exit 1; fi
+    if [ -z "${MASTER_SYSTEM}" ] ; then
+        if [ ! -f "${RELEASEFOLDER}/Configuration/mastersystem.txt" ] ; then echo "Could not find mastersystem.txt"; exit 1; fi
+        MASTER_SYSTEM=`cat ${RELEASEFOLDER}/Configuration/mastersystem.txt`
+        if [ -z "${MASTER_SYSTEM}" ] ; then echo "Error reading master system"; exit 1; fi
+    fi
 
     if [ "${MASTER_SYSTEM}" == "${ENVIRONMENT}" ] ; then
         echo "Current environment is the master environment. Skipping import."
     else
         echo "Current environment is not the master environment. Importing system storage..."
 
-        if [ ! -f "${RELEASEFOLDER}/Configuration/project.txt" ] ; then echo "Could not find project.txt"; exit 1; fi
-        PROJECT=`cat ${RELEASEFOLDER}/Configuration/project.txt`
-        if [ -z "${PROJECT}" ] ; then echo "Error reading project name"; exit 1; fi
+        if [ -z "${PROJECT}" ] ; then
+            if [ ! -f "${RELEASEFOLDER}/Configuration/project.txt" ] ; then echo "Could not find project.txt"; exit 1; fi
+            PROJECT=`cat ${RELEASEFOLDER}/Configuration/project.txt`
+            if [ -z "${PROJECT}" ] ; then echo "Error reading project name"; exit 1; fi
+        fi
 
         # Apply db settings
         cd "${RELEASEFOLDER}/htdocs" || { echo "Error while switching to htdocs directory" ; exit 1; }
         ../tools/apply.php "${ENVIRONMENT}" ../Configuration/settings.csv --groups db || { echo "Error while applying db settings" ; exit 1; }
 
+        if [ -z "${SYSTEM_STORAGE_ROOT_PATH}" ] ; then
+            SYSTEM_STORAGE_ROOT_PATH="/home/systemstorage/systemstorage/${PROJECT}/backup/${MASTER_SYSTEM}"
+        fi
+
         # Import systemstorage
-        ../tools/systemstorage_import.sh -p "${RELEASEFOLDER}/htdocs/" -s "/home/systemstorage/systemstorage/${PROJECT}/backup/${MASTER_SYSTEM}" || { echo "Error while importing systemstorage"; exit 1; }
+        ../tools/systemstorage_import.sh -p "${RELEASEFOLDER}/htdocs/" -s "${SYSTEM_STORAGE_ROOT_PATH}" || { echo "Error while importing systemstorage"; exit 1; }
     fi
 
 fi
