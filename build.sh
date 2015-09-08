@@ -79,23 +79,14 @@ tar -vczf "${BASEPACKAGE}" \
     --exclude=./tmp \
     --exclude-from="Configuration/tar_excludes.txt" . > tmp/base_files.txt || { echo "Creating archive failed"; exit 1; }
 
-echo "Deleting files that made it into the base package"
-while read -r line; do
-    if [ -f "$line" ] ; then
-        rm "$line" || { echo "Deleting file $line failed"; exit 1; }
-    fi
-done < "tmp/base_files.txt"
-
-echo "Cleaning up empty directories"
-find . -type d -empty -delete
-
 EXTRAPACKAGE=${BASEPACKAGE/.tar.gz/.extra.tar.gz}
 echo "Creating extra package '${EXTRAPACKAGE}' with the remaining files"
 tar -czf "${EXTRAPACKAGE}" \
     --exclude=./htdocs/var \
     --exclude=./htdocs/media \
     --exclude=./artifacts \
-    --exclude=./tmp .  || { echo "Creating archive failed"; exit 1; }
+    --exclude=./tmp \
+    --exclude-from="tmp/base_files.txt" .  || { echo "Creating extra archive failed"; exit 1; }
 
 cd artifacts
 md5sum * > MD5SUMS
