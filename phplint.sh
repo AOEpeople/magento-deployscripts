@@ -10,7 +10,7 @@ fi
 
 FILES=`find $1 -type f \( -name '*.php' -o -name '*.phtml' \)`
 
-TMP_FILE=/tmp/xmllint.tmp
+TMP_FILE=/tmp/phplint.tmp
 touch $TMP_FILE;
 
 for i in $FILES; do
@@ -20,6 +20,5 @@ for i in $FILES; do
     else
         php -l "$i" || { echo "Unable to parse file '$i'"; exit 1; }
         echo $md5 >> $TMP_FILE
-        echo "No syntax errors detected in $i"
     fi
 done
