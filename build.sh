@@ -32,6 +32,13 @@ cd ${PROJECTROOTDIR} || { echo "Changing directory failed"; exit 1; }
 if [ ! -f 'composer.json' ] ; then echo "Could not find composer.json"; exit 1 ; fi
 if [ ! -f 'tools/composer.phar' ] ; then echo "Could not find composer.phar"; exit 1 ; fi
 
+if type "hhvm" &> /dev/null; then
+    PHP_COMMAND=hhvm
+    echo "Using HHVM for composer..."
+else
+    PHP_COMMAND=php
+fi
+
 # Run composer
 tools/composer.phar install --verbose --no-ansi --no-interaction --prefer-source || { echo "Composer failed"; exit 1; }
 
