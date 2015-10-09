@@ -57,6 +57,8 @@ case "${OPTION}" in
     esac
 done
 
+if [ -z "${PACKAGEURL}" ]; then echo "ERROR: Please provide package url (e.g. -r s3://mybucket/demo.tar.gz)"; usage 1; fi
+if [ -z "${ENVROOTDIR}" ]; then echo "ERROR: Please provide a target dircteory (e.g. -t /var/www/demo/)"; usage 1; fi
 if [ -z "${ENVIRONMENT}" ]; then echo "ERROR: Please provide an environment code (e.g. -e staging)"; usage 1; fi
 
 # Check if releases folder exists
