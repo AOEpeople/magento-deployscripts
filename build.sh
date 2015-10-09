@@ -71,6 +71,7 @@ touch htdocs/maintenance.flag
 
 # Create package
 if [ ! -d "artifacts/" ] ; then mkdir artifacts/ ; fi
+if [ ! -d "tmp/" ] ; then mkdir tmp/ ; fi
 
 # Backwards compatibility in case tar_excludes.txt doesn't exist
 if [ ! -f "Configuration/tar_excludes.txt" ] ; then
