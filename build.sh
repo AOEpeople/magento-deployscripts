@@ -71,7 +71,8 @@ touch htdocs/maintenance.flag
 
 # Create package
 if [ ! -d "artifacts/" ] ; then mkdir artifacts/ ; fi
-if [ ! -d "tmp/" ] ; then mkdir tmp/ ; fi
+
+tmpfile=$(tempfile -p build_tar_base_files_)
 
 # Backwards compatibility in case tar_excludes.txt doesn't exist
 if [ ! -f "Configuration/tar_excludes.txt" ] ; then
@@ -85,7 +86,7 @@ tar -vczf "${BASEPACKAGE}" \
     --exclude=./htdocs/media \
     --exclude=./artifacts \
     --exclude=./tmp \
-    --exclude-from="Configuration/tar_excludes.txt" . > tmp/base_files.txt || { echo "Creating archive failed"; exit 1; }
+    --exclude-from="Configuration/tar_excludes.txt" . > $tmpfile || { echo "Creating archive failed"; exit 1; }
 
 EXTRAPACKAGE=${BASEPACKAGE/.tar.gz/.extra.tar.gz}
 echo "Creating extra package '${EXTRAPACKAGE}' with the remaining files"
@@ -94,7 +95,9 @@ tar -czf "${EXTRAPACKAGE}" \
     --exclude=./htdocs/media \
     --exclude=./artifacts \
     --exclude=./tmp \
-    --exclude-from="tmp/base_files.txt" .  || { echo "Creating extra archive failed"; exit 1; }
+    --exclude-from="$tmpfile" .  || { echo "Creating extra archive failed"; exit 1; }
+
+rm "$tmpfile"
 
 cd artifacts
 md5sum * > MD5SUMS
