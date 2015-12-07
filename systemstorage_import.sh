@@ -41,12 +41,16 @@ if [[ "${SYSTEMSTORAGEPATH}" =~ ^s3:// ]] ; then
     SYSTEMSTORAGE_LOCAL=`mktemp -d`
     trap cleanup EXIT
 
-    if [ -z "${AWSCLIPROFILE}" ] ; then echo "No awsCliProfile given"; usage 1; fi
+    PROFILEPARAM=""
+    if [ ! -z "${AWSCLIPROFILE}" ] ; then
+        PROFILEPARAM="--profile ${AWSCLIPROFILE}"
+    fi
     echo "Downloading systemstorage from S3"
-    aws --profile ${AWSCLIPROFILE} s3 sync --delete "${SYSTEMSTORAGEPATH}" "${SYSTEMSTORAGE_LOCAL}" || { echo "Error while syncing files from S3 to local" ; exit 1; }
+    aws ${PROFILEPARAM} s3 sync --exact-timestamps --delete "${SYSTEMSTORAGEPATH}" "${SYSTEMSTORAGE_LOCAL}" || { echo "Error while syncing files from S3 to local" ; exit 1; }
 else
     SYSTEMSTORAGE_LOCAL=${SYSTEMSTORAGEPATH}
 fi
+
 
 if [ ! -d "${SYSTEMSTORAGE_LOCAL}" ] ; then echo "Could not find systemstorage project root $SYSTEMSTORAGE_LOCAL" ; usage 1; fi
 if [ ! -d "${SYSTEMSTORAGE_LOCAL}/database" ] ; then echo "Invalid $SYSTEMSTORAGE_LOCAL (could not find database folder)" ; exit 1; fi
