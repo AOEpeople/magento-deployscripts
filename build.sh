@@ -40,7 +40,7 @@ else
 fi
 
 # Run composer
-tools/composer.phar install --verbose --no-ansi --no-interaction --prefer-source || { echo "Composer failed"; exit 1; }
+$PHP_COMMAND tools/composer.phar install --verbose --no-ansi --no-interaction --prefer-source || { echo "Composer failed"; exit 1; }
 
 # Some basic checks
 if [ ! -f 'htdocs/index.php' ] ; then echo "Could not find htdocs/index.php"; exit 1 ; fi
