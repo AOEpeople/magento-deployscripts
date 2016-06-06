@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VALID_ENVIRONMENTS=" production staging devbox latest deploy integration "
+VALID_ENVIRONMENTS=" production staging devbox latest deploy integration stage "
 
 MY_PATH=`dirname $(readlink -f "$0")`
 RELEASEFOLDER=$(readlink -f "${MY_PATH}/../../..")
