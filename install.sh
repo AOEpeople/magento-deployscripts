@@ -40,25 +40,28 @@ fi
 echo
 echo "Linking to shared directories"
 echo "-----------------------------"
-SHAREDFOLDER="${RELEASEFOLDER}/../../shared"
-if [ ! -d "${SHAREDFOLDER}" ] ; then
-    echo "Could not find '../../shared'. Trying '../../../shared' now"
-    SHAREDFOLDER="${RELEASEFOLDER}/../../../shared";
+if [[ -n ${SKIPSHAREDFOLDERCONFIG} ]]  && ${SKIPSHAREDFOLDERCONFIG} ; then
+    echo "Skipping shared directory config because parameter was set"
+else
+    SHAREDFOLDER="${RELEASEFOLDER}/../../shared"
+    if [ ! -d "${SHAREDFOLDER}" ] ; then
+        echo "Could not find '../../shared'. Trying '../../../shared' now"
+        SHAREDFOLDER="${RELEASEFOLDER}/../../../shared";
+    fi
+
+    if [ ! -d "${SHAREDFOLDER}" ] ; then echo "Shared directory ${SHAREDFOLDER} not found"; exit 1; fi
+    if [ ! -d "${SHAREDFOLDER}/media" ] ; then echo "Shared directory ${SHAREDFOLDER}/media not found"; exit 1; fi
+    if [ ! -d "${SHAREDFOLDER}/var" ] ; then echo "Shared directory ${SHAREDFOLDER}/var not found"; exit 1; fi
+
+    if [ -d "${RELEASEFOLDER}/htdocs/media" ]; then echo "Found existing media folder that shouldn't be there"; exit 1; fi
+    if [ -d "${RELEASEFOLDER}/htdocs/var" ]; then echo "Found existing var folder that shouldn't be there"; exit 1; fi
+
+    echo "Setting symlink (${RELEASEFOLDER}/htdocs/media) to shared media folder (${SHAREDFOLDER}/media)"
+    ln -s "${SHAREDFOLDER}/media" "${RELEASEFOLDER}/htdocs/media"  || { echo "Error while linking to shared media directory" ; exit 1; }
+
+    echo "Setting symlink (${RELEASEFOLDER}/htdocs/var) to shared var folder (${SHAREDFOLDER}/var)"
+    ln -s "${SHAREDFOLDER}/var" "${RELEASEFOLDER}/htdocs/var"  || { echo "Error while linking to shared var directory" ; exit 1; }
 fi
-
-if [ ! -d "${SHAREDFOLDER}" ] ; then echo "Shared directory ${SHAREDFOLDER} not found"; exit 1; fi
-if [ ! -d "${SHAREDFOLDER}/media" ] ; then echo "Shared directory ${SHAREDFOLDER}/media not found"; exit 1; fi
-if [ ! -d "${SHAREDFOLDER}/var" ] ; then echo "Shared directory ${SHAREDFOLDER}/var not found"; exit 1; fi
-
-if [ -d "${RELEASEFOLDER}/htdocs/media" ]; then echo "Found existing media folder that shouldn't be there"; exit 1; fi
-if [ -d "${RELEASEFOLDER}/htdocs/var" ]; then echo "Found existing var folder that shouldn't be there"; exit 1; fi
-
-echo "Setting symlink (${RELEASEFOLDER}/htdocs/media) to shared media folder (${SHAREDFOLDER}/media)"
-ln -s "${SHAREDFOLDER}/media" "${RELEASEFOLDER}/htdocs/media"  || { echo "Error while linking to shared media directory" ; exit 1; }
-
-echo "Setting symlink (${RELEASEFOLDER}/htdocs/var) to shared var folder (${SHAREDFOLDER}/var)"
-ln -s "${SHAREDFOLDER}/var" "${RELEASEFOLDER}/htdocs/var"  || { echo "Error while linking to shared var directory" ; exit 1; }
-
 
 
 echo
