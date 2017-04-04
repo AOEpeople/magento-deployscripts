@@ -2,7 +2,7 @@
 
 function usage {
     echo "Usage:"
-    echo " $0 -s <stackId> -a <appId> -p <profile> -c <command>"
+    echo " $0 -s <stackId> -a <appId> -p <profile> -c <command> -C <custom JSON>"
     echo " -s   stack id";
     echo " -a   app id";
     echo " -p   aws cli profile";
