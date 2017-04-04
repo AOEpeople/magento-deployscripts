@@ -14,7 +14,7 @@ function usage {
     exit $1
 }
 
-while getopts 'a:s:c:p:' OPTION ; do
+while getopts 'a:s:c:C:p:' OPTION ; do
 case "${OPTION}" in
         s) AWS_STACKID="${OPTARG}";;
         a) AWS_APPID="${OPTARG}";;
