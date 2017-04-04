@@ -39,7 +39,7 @@ fi
 AWSCLI="aws --profile ${PROFILE} --region us-east-1 opsworks"
 
 echo "Triggering deployment on app ${AWS_APPID}"
-DEPLOYMENT_ID=`${AWSCLI} create-deployment --stack-id "${AWS_STACKID}" --app-id "${AWS_APPID}" --command "${COMMAND}" CUSTOM_JSON | jq '.DeploymentId'  | sed 's/\"//g'`
+DEPLOYMENT_ID=`${AWSCLI} create-deployment --stack-id "${AWS_STACKID}" --app-id "${AWS_APPID}" --command "${COMMAND}" ${CUSTOM_JSON} | jq '.DeploymentId'  | sed 's/\"//g'`
 
 echo "Deployment Id: ${DEPLOYMENT_ID}"
 echo "https://console.aws.amazon.com/opsworks/home#/stack/${AWS_STACKID}/deployments/${DEPLOYMENT_ID}"
