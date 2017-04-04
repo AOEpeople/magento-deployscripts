@@ -31,9 +31,9 @@ if [ -z "${COMMAND}" ]; then echo "ERROR: Please provide a command (-c <command>
 if [ -z "${PROFILE}" ]; then echo "ERROR: Please provide a aws cli profile (-p <profile>)"; exit 1; fi
 
 if [ -z "${JSON}" ]; then
-    CUSTOM_JSON = ""
+    CUSTOM_JSON=""
 else
-    CUSTOM_JSON = "--custom-json ${JSON}"
+    CUSTOM_JSON="--custom-json ${JSON}"
 fi
 
 AWSCLI="aws --profile ${PROFILE} --region us-east-1 opsworks"
